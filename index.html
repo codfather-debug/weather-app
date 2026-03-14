@@ -103,9 +103,9 @@
   @keyframes floatIcon { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-8px);} }
 
   /* ── Stats ── */
-  .stats-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+  .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
   .stat-card { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 15px 13px; opacity: 0; animation: fadeUp 0.5s ease forwards; }
-  .stat-card:nth-child(1){animation-delay:0.3s;} .stat-card:nth-child(2){animation-delay:0.38s;} .stat-card:nth-child(3){animation-delay:0.46s;}
+  .stat-card:nth-child(1){animation-delay:0.3s;} .stat-card:nth-child(2){animation-delay:0.38s;} .stat-card:nth-child(3){animation-delay:0.46s;} .stat-card:nth-child(4){animation-delay:0.54s;}
   .stat-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-bottom: 8px; display: flex; align-items: center; gap: 5px; }
   .stat-dot { width: 4px; height: 4px; border-radius: 50%; }
   .stat-value { font-family: 'Bebas Neue', cursive; font-size: 28px; line-height: 1; }
@@ -114,6 +114,7 @@
   .stat-feel .stat-value{color:var(--feel);} .stat-feel .stat-dot{background:var(--feel);box-shadow:0 0 5px var(--feel);}
   .stat-wind .stat-value{color:var(--wind);} .stat-wind .stat-dot{background:var(--wind);box-shadow:0 0 5px var(--wind);}
   .stat-rain .stat-value{color:var(--rain);} .stat-rain .stat-dot{background:var(--rain);box-shadow:0 0 5px var(--rain);}
+  .stat-uv .stat-value{color:var(--warm);} .stat-uv .stat-dot{background:var(--warm);box-shadow:0 0 5px var(--warm);}
   .rain-bar-wrap { margin-top: 6px; height: 2px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden; }
   .rain-bar-fill { height: 100%; background: var(--rain); border-radius: 2px; transition: width 1s ease; box-shadow: 0 0 6px var(--rain); }
 
@@ -312,6 +313,11 @@
         <div class="stat-value" id="rainVal">—<span class="stat-unit">in</span></div>
         <div class="rain-bar-wrap"><div class="rain-bar-fill" id="rainBar" style="width:0%"></div></div>
         <div class="stat-sub" id="rainDesc">—</div>
+      </div>
+      <div class="stat-card stat-uv">
+        <div class="stat-label"><div class="stat-dot" id="uvDot"></div>UV Index</div>
+        <div class="stat-value" id="uvVal">—</div>
+        <div class="stat-sub" id="uvDesc">—</div>
       </div>
     </div>
 
@@ -598,8 +604,8 @@ async function fetchForecast(lat,lon) {
   document.getElementById('dailyRows').innerHTML='<div class="forecast-loading">Loading…</div>';
   try {
     const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
-      +`&hourly=temperature_2m,precipitation_probability,weather_code,wind_speed_10m,wind_gusts_10m`
-      +`&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,wind_speed_10m_max,wind_gusts_10m_max`
+      +`&hourly=temperature_2m,precipitation_probability,weather_code,wind_speed_10m,wind_gusts_10m,uv_index`
+      +`&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,wind_speed_10m_max,wind_gusts_10m_max,uv_index_max`
       +`&wind_speed_unit=mph&temperature_unit=fahrenheit&precipitation_unit=inch&timezone=auto&forecast_days=8`;
     const data=await (await fetch(url)).json();
     renderHourly(data.hourly);
@@ -617,6 +623,7 @@ function renderHourly(h) {
   for(let i=0;i<h.time.length;i++){
     if(new Date(h.time[i])>=now){startIdx=i;break;}
   }
+  renderUV(h.uv_index?.[startIdx]);
   const rows=[];
   for(let i=startIdx;i<Math.min(startIdx+48,h.time.length);i++){
     const dt=new Date(h.time[i]);
@@ -759,6 +766,29 @@ function renderTennis({temp, windSpeedMph, windGustMph, rainProb}) {
     document.getElementById(se).textContent = s + '%'; document.getElementById(se).style.color = c;
     document.getElementById(be).style.width = s + '%'; document.getElementById(be).style.background = c;
   });
+}
+
+// ═══════════════════════════════════════
+// UV INDEX
+// ═══════════════════════════════════════
+function uvInfo(uv) {
+  if (uv == null || isNaN(uv)) return { label: '—', color: 'var(--muted)' };
+  if (uv <= 2)  return { label: 'Low',       color: '#69f0ae' };
+  if (uv <= 5)  return { label: 'Moderate',  color: '#ffee58' };
+  if (uv <= 7)  return { label: 'High',      color: '#ffab40' };
+  if (uv <= 10) return { label: 'Very High', color: '#ff7043' };
+  return              { label: 'Extreme',    color: '#ce93d8' };
+}
+function renderUV(uv) {
+  const val = uv != null ? Math.round(uv) : null;
+  const { label, color } = uvInfo(val);
+  const el = document.getElementById('uvVal');
+  el.textContent = val ?? '—';
+  el.style.color = color;
+  const dot = document.getElementById('uvDot');
+  dot.style.background = color;
+  dot.style.boxShadow = `0 0 5px ${color}`;
+  document.getElementById('uvDesc').textContent = label;
 }
 
 // ═══════════════════════════════════════
