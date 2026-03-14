@@ -127,7 +127,7 @@
   .tennis-verdict { font-size: 11px; font-weight: 500; margin-top: 1px; transition: color 0.6s ease; }
   .tennis-bar-track { height: 5px; background: rgba(255,255,255,0.07); border-radius: 3px; overflow: hidden; margin-bottom: 12px; }
   .tennis-bar-fill { height: 100%; border-radius: 3px; transition: width 1.2s cubic-bezier(0.4,0,0.2,1), background 0.6s ease; }
-  .tennis-factors { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .tennis-factors { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .tennis-factor { display: flex; flex-direction: column; gap: 4px; }
   .factor-row { display: flex; align-items: center; justify-content: space-between; }
   .factor-name { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
@@ -339,6 +339,10 @@
         <div class="tennis-factor">
           <div class="factor-row"><span class="factor-name">Precip</span><span class="factor-score" id="fRainScore">—</span></div>
           <div class="factor-track"><div class="factor-fill" id="fRainBar" style="width:0%"></div></div>
+        </div>
+        <div class="tennis-factor">
+          <div class="factor-row"><span class="factor-name">Gusts</span><span class="factor-score" id="fGustScore">—</span></div>
+          <div class="factor-track"><div class="factor-fill" id="fGustBar" style="width:0%"></div></div>
         </div>
       </div>
     </div>
@@ -571,15 +575,18 @@ async function fetchNWS(lat,lon) {
   if(tempC==null||windMs==null) throw new Error('incomplete');
   const feelC=p.heatIndex?.value??p.windChill?.value??tempC;
   const precipIn=p.precipitationLastHour?.value!=null?p.precipitationLastHour.value/25.4:0;
+  const gustMph=p.windGust?.value!=null?msToMph(p.windGust.value):null;
+  const rainProb=Math.min(precipIn/0.1,1.0);
   const condLabel=p.textDescription||'Current Conditions';
-  renderWeather({temp:cToF(tempC),feel:cToF(feelC),windSpeedMph:msToMph(windMs),windDeg:p.windDirection?.value,rain:precipIn,condLabel,icon:nwsIcon(condLabel)});
+  renderWeather({temp:cToF(tempC),feel:cToF(feelC),windSpeedMph:msToMph(windMs),windGustMph:gustMph,windDeg:p.windDirection?.value,rain:precipIn,rainProb,condLabel,icon:nwsIcon(condLabel)});
   setSource('NWS',sid);
 }
 async function fetchOpenMeteo(lat,lon) {
-  const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_direction_10m&wind_speed_unit=mph&temperature_unit=fahrenheit&precipitation_unit=inch&timezone=auto`;
+  const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m&wind_speed_unit=mph&temperature_unit=fahrenheit&precipitation_unit=inch&timezone=auto`;
   const c=(await (await fetch(url)).json()).current;
   const [condLabel,icon]=WMO[c.weather_code]||['Unknown','🌡'];
-  renderWeather({temp:c.temperature_2m,feel:c.apparent_temperature,windSpeedMph:c.wind_speed_10m,windDeg:c.wind_direction_10m,rain:c.precipitation,condLabel,icon});
+  const rainProb=Math.min((c.precipitation??0)/0.1,1.0);
+  renderWeather({temp:c.temperature_2m,feel:c.apparent_temperature,windSpeedMph:c.wind_speed_10m,windGustMph:c.wind_gusts_10m,windDeg:c.wind_direction_10m,rain:c.precipitation,rainProb,condLabel,icon});
   setSource('OpenMeteo','');
 }
 
@@ -591,8 +598,8 @@ async function fetchForecast(lat,lon) {
   document.getElementById('dailyRows').innerHTML='<div class="forecast-loading">Loading…</div>';
   try {
     const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
-      +`&hourly=temperature_2m,precipitation_probability,weather_code,wind_speed_10m`
-      +`&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,wind_speed_10m_max`
+      +`&hourly=temperature_2m,precipitation_probability,weather_code,wind_speed_10m,wind_gusts_10m`
+      +`&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,wind_speed_10m_max,wind_gusts_10m_max`
       +`&wind_speed_unit=mph&temperature_unit=fahrenheit&precipitation_unit=inch&timezone=auto&forecast_days=8`;
     const data=await (await fetch(url)).json();
     renderHourly(data.hourly);
@@ -615,10 +622,11 @@ function renderHourly(h) {
     const dt=new Date(h.time[i]);
     const temp=Math.round(h.temperature_2m[i]);
     const wind=Math.round(h.wind_speed_10m[i]);
+    const gust=Math.round(h.wind_gusts_10m[i]??wind*1.4);
     const precip=h.precipitation_probability[i]??0;
     const code=h.weather_code[i];
     const [,icon]=WMO[code]||['','🌡'];
-    const ts=tennisMini(temp,wind,precip);
+    const ts=tennisMini(temp,wind,precip,gust);
     const isNow=i===startIdx;
     rows.push(`<div class="fc-row">
       <div><div class="fc-time">${isNow?'Now':dt.toLocaleTimeString([],{hour:'numeric',hour12:true})}</div><div class="fc-time-sub">${isNow?'':dt.toLocaleDateString([],{weekday:'short'})}</div></div>
@@ -645,8 +653,8 @@ function renderDaily(d) {
     const [,icon]=WMO[code]||['','🌡'];
     // Tennis score: use avg of hi/lo for temp, max wind, precip prob mapped to inches estimate
     const avgTemp=(hi+lo)/2;
-    const rainEst=precip>50?0.1:precip>20?0.01:0;
-    const ts=tennisMini(avgTemp,wind,rainEst,true);
+    const gust=Math.round(d.wind_gusts_10m_max[i]??wind*1.4);
+    const ts=tennisMini(avgTemp,wind,precip,gust);
     const isToday=dt.setHours(0,0,0,0)===today.getTime();
     const label=isToday?'Today':dt.toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'});
     rows.push(`<div class="fc-row">
@@ -664,7 +672,7 @@ function renderDaily(d) {
 // ═══════════════════════════════════════
 // RENDER CURRENT
 // ═══════════════════════════════════════
-function renderWeather({temp,feel,windSpeedMph,windDeg,rain,condLabel,icon}) {
+function renderWeather({temp,feel,windSpeedMph,windGustMph,windDeg,rain,rainProb,condLabel,icon}) {
   const rainIn=rain??0;
   document.getElementById('tempVal').textContent=Math.round(temp);
   document.getElementById('conditionText').textContent=condLabel;
@@ -679,7 +687,7 @@ function renderWeather({temp,feel,windSpeedMph,windDeg,rain,condLabel,icon}) {
   const now=new Date();
   document.getElementById('updatedTime').textContent=`Updated ${now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}`;
   document.getElementById('timeLine').textContent=now.toLocaleDateString([],{weekday:'long',month:'long',day:'numeric'});
-  renderTennis({temp,windSpeedMph,rain:rainIn});
+  renderTennis({temp,windSpeedMph,windGustMph,rainProb});
 }
 function setSource(name,sid) {
   document.getElementById('sourceBadge').className='source-badge '+(name==='NWS'?'nws':'openmeteo');
@@ -687,56 +695,69 @@ function setSource(name,sid) {
 }
 
 // ═══════════════════════════════════════
-// TENNIS SCORING
+// TENNIS WEATHER SCORE (TWS)
+// T = °F, W = sustained mph, G = gust mph, R = rain probability 0–1
 // ═══════════════════════════════════════
-function scoreTempF(t) {
-  if(t<32)return 0; if(t<50)return Math.round((t-32)/18*30);
-  if(t<62)return Math.round(30+(t-50)/12*40); if(t<=78)return 100;
-  if(t<=88)return Math.round(100-(t-78)/10*30); if(t<=100)return Math.round(70-(t-88)/12*50);
-  return Math.max(0,Math.round(20-(t-100)*4));
+function computeTennisWeatherScore(T, W, G, R) {
+  const temp_score = Math.exp(-Math.pow(T - 72, 2) / (2 * Math.pow(15, 2)));
+  const wind_score = 1 / (1 + Math.exp((W - 10) / 3));
+  const gust_score = 1 / (1 + Math.exp((G - W - 6) / 2));
+  const rain_score = Math.exp(-4 * R);
+  const raw = 0.25 * temp_score + 0.35 * wind_score + 0.25 * gust_score + 0.15 * rain_score;
+  const score = Math.min(100, Math.max(0, Math.round(raw * 100)));
+  let category;
+  if (score >= 90) category = 'Elite tennis conditions';
+  else if (score >= 80) category = 'Excellent';
+  else if (score >= 70) category = 'Good';
+  else if (score >= 60) category = 'Playable';
+  else if (score >= 40) category = 'Poor';
+  else category = 'Bad';
+  return { score, category };
 }
-function scoreWindMph(w) {
-  if(w<=5)return 100; if(w<=10)return Math.round(100-(w-5)/5*20);
-  if(w<=20)return Math.round(80-(w-10)/10*40); if(w<=30)return Math.round(40-(w-20)/10*30);
-  return Math.max(0,Math.round(10-(w-30)));
+function twsComponents(T, W, G, R) {
+  return {
+    temp: Math.round(Math.exp(-Math.pow(T - 72, 2) / (2 * Math.pow(15, 2))) * 100),
+    wind: Math.round((1 / (1 + Math.exp((W - 10) / 3))) * 100),
+    gust: Math.round((1 / (1 + Math.exp((G - W - 6) / 2))) * 100),
+    rain: Math.round(Math.exp(-4 * R) * 100),
+  };
 }
-function scoreRainIn(r) {
-  if(!r)return 100; if(r<0.01)return 85; if(r<0.05)return 50; if(r<0.1)return 20; return 0;
-}
-// For forecast rows — accepts precip probability % as alternative
-function tennisMini(temp,wind,rainOrProb,isProb=false) {
-  const rainScore=isProb
-    ? (rainOrProb<=10?100:rainOrProb<=30?85:rainOrProb<=50?50:rainOrProb<=70?20:0)
-    : scoreRainIn(rainOrProb);
-  return Math.round(scoreTempF(temp)*0.35 + scoreWindMph(wind)*0.35 + rainScore*0.30);
+// For forecast rows: precipProb is 0–100, gust is mph (optional — estimates if absent)
+function tennisMini(temp, wind, precipProb, gust) {
+  const R = precipProb / 100;
+  const G = gust ?? wind * 1.4;
+  return computeTennisWeatherScore(temp, wind, G, R).score;
 }
 function tennisDotColor(s) {
-  if(s>=75)return '#69f0ae'; if(s>=60)return '#b2ff59';
-  if(s>=45)return '#ffab40'; if(s>=30)return '#ff7043'; return '#ef5350';
+  if(s>=90)return '#69f0ae'; if(s>=80)return '#b2ff59';
+  if(s>=70)return '#eeff41'; if(s>=60)return '#ffab40';
+  if(s>=40)return '#ff7043'; return '#ef5350';
 }
 function tennisVerdict(s) {
-  if(s>=90)return{text:'Perfect — get out there',color:'#69f0ae'};
-  if(s>=75)return{text:'Great conditions',color:'#b2ff59'};
-  if(s>=60)return{text:'Good to play',color:'#eeff41'};
-  if(s>=45)return{text:'Playable, not ideal',color:'#ffab40'};
-  if(s>=30)return{text:'Tough conditions',color:'#ff7043'};
-  return{text:'Not recommended',color:'#ef5350'};
+  if(s>=90)return{text:'Elite — get out there',color:'#69f0ae'};
+  if(s>=80)return{text:'Excellent conditions',color:'#b2ff59'};
+  if(s>=70)return{text:'Good to play',color:'#eeff41'};
+  if(s>=60)return{text:'Playable',color:'#ffab40'};
+  if(s>=40)return{text:'Poor conditions',color:'#ff7043'};
+  return{text:'Bad conditions',color:'#ef5350'};
 }
 function factorColor(s){if(s>=80)return'#69f0ae';if(s>=60)return'#b2ff59';if(s>=40)return'#ffab40';return'#ef5350';}
-function renderTennis({temp,windSpeedMph,rain}) {
-  const tS=scoreTempF(temp),wS=scoreWindMph(windSpeedMph),rS=scoreRainIn(rain??0);
-  const overall=Math.round(tS*0.35+wS*0.35+rS*0.30);
-  const{text,color}=tennisVerdict(overall);
-  document.getElementById('tennisScore').textContent=overall;
-  document.getElementById('tennisScore').style.color=color;
-  document.getElementById('tennisVerdict').textContent=text;
-  document.getElementById('tennisVerdict').style.color=color;
-  const bar=document.getElementById('tennisBar');
-  bar.style.width=overall+'%'; bar.style.background=color; bar.style.boxShadow=`0 0 8px ${color}55`;
-  [['fTempScore','fTempBar',tS],['fWindScore','fWindBar',wS],['fRainScore','fRainBar',rS]].forEach(([se,be,s])=>{
-    const c=factorColor(s);
-    document.getElementById(se).textContent=s+'%'; document.getElementById(se).style.color=c;
-    document.getElementById(be).style.width=s+'%'; document.getElementById(be).style.background=c;
+function renderTennis({temp, windSpeedMph, windGustMph, rainProb}) {
+  const G = windGustMph ?? windSpeedMph * 1.4;
+  const R = rainProb ?? 0;
+  const {score} = computeTennisWeatherScore(temp, windSpeedMph, G, R);
+  const comps = twsComponents(temp, windSpeedMph, G, R);
+  const {text, color} = tennisVerdict(score);
+  document.getElementById('tennisScore').textContent = score;
+  document.getElementById('tennisScore').style.color = color;
+  document.getElementById('tennisVerdict').textContent = text;
+  document.getElementById('tennisVerdict').style.color = color;
+  const bar = document.getElementById('tennisBar');
+  bar.style.width = score + '%'; bar.style.background = color; bar.style.boxShadow = `0 0 8px ${color}55`;
+  [['fTempScore','fTempBar',comps.temp],['fWindScore','fWindBar',comps.wind],['fRainScore','fRainBar',comps.rain],['fGustScore','fGustBar',comps.gust]].forEach(([se,be,s])=>{
+    const c = factorColor(s);
+    document.getElementById(se).textContent = s + '%'; document.getElementById(se).style.color = c;
+    document.getElementById(be).style.width = s + '%'; document.getElementById(be).style.background = c;
   });
 }
 
