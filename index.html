@@ -206,8 +206,57 @@
     font-family: 'DM Sans', sans-serif; flex-shrink: 0;
   }
 
+  /* Daily wet court warning */
+  .wet-warning {
+    grid-column: 1 / -1;
+    font-size: 10px;
+    color: #ffb74d;
+    padding: 2px 0 4px 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  /* Daily row wrapper for wet warning */
+  .fc-row-wrap {
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .fc-row-wrap:last-child { border-bottom: none; }
+  .fc-row-wrap .fc-row { border-bottom: none; }
+
   .forecast-loading { text-align: center; padding: 24px; font-size: 12px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
   .forecast-note { font-size: 10px; color: var(--muted); text-align: center; padding: 8px 0 2px; font-style: italic; }
+
+  /* ── Sessions panel ── */
+  .sessions-container { display: flex; flex-direction: column; gap: 16px; }
+  .session-day-block {}
+  .session-day-header {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 2px; color: var(--muted);
+    font-weight: 500; margin-bottom: 8px; padding-left: 2px;
+  }
+  .session-cards-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .session-card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 12px 8px 10px; display: flex; flex-direction: column; align-items: center; gap: 5px;
+    transition: background 0.15s;
+  }
+  .session-card:hover { background: var(--panel-hover); }
+  .session-card.past { opacity: 0.35; }
+  .session-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); font-weight: 500; }
+  .session-icon { font-size: 22px; line-height: 1; }
+  .session-temp { font-family: 'Bebas Neue', cursive; font-size: 20px; color: var(--warm); line-height: 1; }
+  .session-wind { font-size: 10px; color: var(--wind); font-weight: 500; }
+  .session-tennis-dot {
+    width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center;
+    justify-content: center; font-size: 11px; font-weight: 700; color: #0a0e1a;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .session-wet-badge {
+    font-size: 9px; color: #64b5f6; background: rgba(100,181,246,0.12);
+    border: 1px solid rgba(100,181,246,0.25); border-radius: 8px; padding: 2px 6px;
+    white-space: nowrap;
+  }
+  .sessions-note { font-size: 10px; color: var(--muted); text-align: center; padding: 8px 0 2px; font-style: italic; }
 
   /* ── Footer ── */
   .footer { display: flex; align-items: center; justify-content: space-between; padding: 0 2px; opacity: 0; animation: fadeUp 0.5s ease 0.75s forwards; margin-bottom: 8px; }
@@ -362,6 +411,7 @@
       <div class="forecast-tab-bar">
         <div class="forecast-tab active" id="ftab-hourly" onclick="switchForecastTab('hourly')">Hourly</div>
         <div class="forecast-tab" id="ftab-daily" onclick="switchForecastTab('daily')">7-Day</div>
+        <div class="forecast-tab" id="ftab-sessions" onclick="switchForecastTab('sessions')">Sessions</div>
       </div>
 
       <!-- Hourly panel -->
@@ -397,6 +447,12 @@
         </div>
         <div class="forecast-note">7-day outlook · Open-Meteo</div>
       </div>
+
+      <!-- Sessions panel -->
+      <div class="forecast-panel" id="fpanel-sessions">
+        <div id="sessionsContent"><div class="forecast-loading">Loading sessions…</div></div>
+        <div class="sessions-note">Today + 3 days · Morning / Afternoon / Evening</div>
+      </div>
     </div>
 
     <div class="footer">
@@ -423,6 +479,9 @@ const MAX_SAVED = 5, GPS_ID = '__gps__';
 let savedLocs = (() => { try { return JSON.parse(localStorage.getItem('wx_locs')||'[]'); } catch{return[];} })();
 let activeLocId = GPS_ID, gpsLat = null, gpsLon = null;
 let activeForecastTab = 'hourly';
+
+// Module-level wetness array populated after forecast fetch
+let hourlyWetness = [];
 
 function persistLocs() { localStorage.setItem('wx_locs', JSON.stringify(savedLocs)); }
 
@@ -455,7 +514,7 @@ function deleteLoc(id) { savedLocs=savedLocs.filter(l=>l.id!==id); persistLocs()
 // ═══════════════════════════════════════
 function switchForecastTab(tab) {
   activeForecastTab = tab;
-  ['hourly','daily'].forEach(t => {
+  ['hourly','daily','sessions'].forEach(t => {
     document.getElementById(`ftab-${t}`).classList.toggle('active', t===tab);
     document.getElementById(`fpanel-${t}`).classList.toggle('active', t===tab);
   });
@@ -603,22 +662,59 @@ async function fetchOpenMeteo(lat,lon) {
 }
 
 // ═══════════════════════════════════════
+// COURT DRYING MODEL
+// ═══════════════════════════════════════
+function computeWetness(h) {
+  const n = h.time.length;
+  const wetness = new Array(n).fill(0);
+  for (let i = 0; i < n; i++) {
+    const prev = i === 0 ? 0 : wetness[i - 1];
+    const rain_added = h.precipitation?.[i] ?? 0;
+    const temp = h.temperature_2m?.[i] ?? 60;
+    const cloud = h.cloud_cover?.[i] ?? 50;
+    const wind = h.wind_speed_10m?.[i] ?? 0;
+
+    const base_dry_rate = 0.08;
+
+    let temp_factor;
+    if (temp < 40) temp_factor = 0.2;
+    else if (temp < 50) temp_factor = 0.5;
+    else if (temp < 60) temp_factor = 0.7;
+    else temp_factor = 1.0;
+
+    const sun_factor = 1.0 - (cloud / 100) * 0.6;
+    const wind_factor = 1.0 + Math.min(wind, 20) / 20 * 0.3;
+
+    const drying = base_dry_rate * temp_factor * sun_factor * wind_factor;
+    wetness[i] = Math.max(0, prev + rain_added - drying);
+  }
+  return wetness;
+}
+
+// ═══════════════════════════════════════
 // FORECAST (Open-Meteo hourly + daily)
 // ═══════════════════════════════════════
 async function fetchForecast(lat,lon) {
   document.getElementById('hourlyRows').innerHTML='<div class="forecast-loading">Loading…</div>';
   document.getElementById('dailyRows').innerHTML='<div class="forecast-loading">Loading…</div>';
+  document.getElementById('sessionsContent').innerHTML='<div class="forecast-loading">Loading…</div>';
   try {
     const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
-      +`&hourly=temperature_2m,precipitation_probability,weather_code,wind_speed_10m,wind_gusts_10m,uv_index`
+      +`&hourly=temperature_2m,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m,cloud_cover,uv_index`
       +`&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,wind_speed_10m_max,wind_gusts_10m_max,uv_index_max`
       +`&wind_speed_unit=mph&temperature_unit=fahrenheit&precipitation_unit=inch&timezone=auto&forecast_days=8`;
     const data=await (await fetch(url)).json();
+
+    // Compute and store wetness array globally
+    hourlyWetness = computeWetness(data.hourly);
+
     renderHourly(data.hourly);
-    renderDaily(data.daily);
+    renderDaily(data.daily, data.hourly);
+    renderSessions(data.hourly);
   } catch(e) {
     document.getElementById('hourlyRows').innerHTML='<div class="forecast-loading">Failed to load forecast</div>';
     document.getElementById('dailyRows').innerHTML='<div class="forecast-loading">Failed to load forecast</div>';
+    document.getElementById('sessionsContent').innerHTML='<div class="forecast-loading">Failed to load forecast</div>';
   }
 }
 
@@ -639,7 +735,8 @@ function renderHourly(h) {
     const precip=h.precipitation_probability[i]??0;
     const code=h.weather_code[i];
     const [,icon]=WMO[code]||['','🌡'];
-    const ts=tennisMini(temp,wind,precip,gust);
+    const wetness=hourlyWetness[i]??0;
+    const ts=tennisMini(temp,wind,precip,gust,wetness);
     const uv=h.uv_index?.[i];
     const uvRounded=uv!=null?Math.round(uv):null;
     const {color:uvColor}=uvInfo(uvRounded);
@@ -657,9 +754,10 @@ function renderHourly(h) {
   document.getElementById('hourlyRows').innerHTML=rows.join('');
 }
 
-function renderDaily(d) {
+function renderDaily(d, h) {
   const today=new Date(); today.setHours(0,0,0,0);
   const rows=[];
+
   for(let i=0;i<Math.min(7,d.time.length);i++){
     const dt=new Date(d.time[i]+'T12:00:00');
     const hi=Math.round(d.temperature_2m_max[i]);
@@ -668,26 +766,202 @@ function renderDaily(d) {
     const precip=d.precipitation_probability_max[i]??0;
     const code=d.weather_code[i];
     const [,icon]=WMO[code]||['','🌡'];
-    // Tennis score: use avg of hi/lo for temp, max wind, precip prob mapped to inches estimate
-    const avgTemp=(hi+lo)/2;
     const gust=Math.round(d.wind_gusts_10m_max[i]??wind*1.4);
-    const ts=tennisMini(avgTemp,wind,precip,gust);
     const uvMax=d.uv_index_max?.[i];
     const uvMaxRounded=uvMax!=null?Math.round(uvMax):null;
     const {color:uvColor}=uvInfo(uvMaxRounded);
-    const isToday=dt.setHours(0,0,0,0)===today.getTime();
-    const label=isToday?'Today':dt.toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'});
-    rows.push(`<div class="fc-row">
-      <div><div class="fc-time" style="font-size:${isToday?'13px':'11px'}">${label}</div></div>
-      <div class="fc-icon">${icon}</div>
-      <div class="fc-temp-range"><div class="fc-temp-hi">${hi}°</div><div class="fc-temp-lo">${lo}°</div></div>
-      <div class="fc-wind">${wind}<span style="font-size:9px;opacity:0.7"> mph</span></div>
-      <div class="fc-precip">${precip}<span style="font-size:9px;opacity:0.7">%</span></div>
-      <div class="fc-tennis"><div class="tennis-dot" style="background:${tennisDotColor(ts)}">${ts}</div></div>
-      <div class="fc-uv" style="color:${uvColor}">${uvMaxRounded??'—'}</div>
+    const isToday=new Date(d.time[i]+'T12:00:00').setHours(0,0,0,0)===today.getTime();
+    const label=isToday?'Today':new Date(d.time[i]+'T12:00:00').toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'});
+
+    // Tennis score: average tennisMini of 9am-6pm hourly rows for this day
+    // Fall back to daily avg if no hourly data available
+    let ts;
+    if (h && h.time) {
+      const dayStr = d.time[i]; // e.g. "2025-06-01"
+      const dayIndices = [];
+      for (let j = 0; j < h.time.length; j++) {
+        const ht = h.time[j]; // "2025-06-01T09:00"
+        if (!ht.startsWith(dayStr)) continue;
+        const hourMatch = ht.match(/T(\d{2}):/);
+        if (!hourMatch) continue;
+        const hr = parseInt(hourMatch[1], 10);
+        if (hr >= 9 && hr < 18) dayIndices.push(j);
+      }
+      if (dayIndices.length > 0) {
+        const scores = dayIndices.map(j => {
+          const t = Math.round(h.temperature_2m[j]);
+          const w = Math.round(h.wind_speed_10m[j]);
+          const g = Math.round(h.wind_gusts_10m[j] ?? w * 1.4);
+          const p = h.precipitation_probability[j] ?? 0;
+          const wet = hourlyWetness[j] ?? 0;
+          return tennisMini(t, w, p, g, wet);
+        });
+        ts = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+      } else {
+        // Fallback: use daily avg temp (informational daily wind still shown but not scoring)
+        const avgTemp = (hi + lo) / 2;
+        ts = tennisMini(avgTemp, wind, precip, gust);
+      }
+    } else {
+      const avgTemp = (hi + lo) / 2;
+      ts = tennisMini(avgTemp, wind, precip, gust);
+    }
+
+    // Wet court warning: check if any hour midnight–9am has wetness > 0.1"
+    let wetWarningHtml = '';
+    if (h && h.time) {
+      const dayStr = d.time[i];
+      let hasMorningWet = false;
+      for (let j = 0; j < h.time.length; j++) {
+        const ht = h.time[j];
+        if (!ht.startsWith(dayStr)) continue;
+        const hourMatch = ht.match(/T(\d{2}):/);
+        if (!hourMatch) continue;
+        const hr = parseInt(hourMatch[1], 10);
+        if (hr >= 0 && hr < 9 && (hourlyWetness[j] ?? 0) > 0.1) {
+          hasMorningWet = true;
+          break;
+        }
+      }
+      if (hasMorningWet) {
+        // Find first hour at or after 9am where wetness drops below 0.05"
+        let clearanceHour = null;
+        for (let j = 0; j < h.time.length; j++) {
+          const ht = h.time[j];
+          if (!ht.startsWith(dayStr)) continue;
+          const hourMatch = ht.match(/T(\d{2}):/);
+          if (!hourMatch) continue;
+          const hr = parseInt(hourMatch[1], 10);
+          if (hr >= 9 && (hourlyWetness[j] ?? 0) < 0.05) {
+            clearanceHour = hr;
+            break;
+          }
+        }
+        if (clearanceHour !== null) {
+          const ampm = clearanceHour < 12 ? 'am' : 'pm';
+          const h12 = clearanceHour > 12 ? clearanceHour - 12 : (clearanceHour === 0 ? 12 : clearanceHour);
+          wetWarningHtml = `<div class="wet-warning">💧 Courts wet until ~${h12}${ampm}</div>`;
+        } else {
+          wetWarningHtml = `<div class="wet-warning">💧 Courts may stay wet all day</div>`;
+        }
+      }
+    }
+
+    rows.push(`<div class="fc-row-wrap">
+      <div class="fc-row">
+        <div><div class="fc-time" style="font-size:${isToday?'13px':'11px'}">${label}</div></div>
+        <div class="fc-icon">${icon}</div>
+        <div class="fc-temp-range"><div class="fc-temp-hi">${hi}°</div><div class="fc-temp-lo">${lo}°</div></div>
+        <div class="fc-wind">${wind}<span style="font-size:9px;opacity:0.7"> mph</span></div>
+        <div class="fc-precip">${precip}<span style="font-size:9px;opacity:0.7">%</span></div>
+        <div class="fc-tennis"><div class="tennis-dot" style="background:${tennisDotColor(ts)}">${ts}</div></div>
+        <div class="fc-uv" style="color:${uvColor}">${uvMaxRounded??'—'}</div>
+      </div>
+      ${wetWarningHtml ? `<div style="padding: 0 14px 8px;">${wetWarningHtml}</div>` : ''}
     </div>`);
   }
   document.getElementById('dailyRows').innerHTML=rows.join('');
+}
+
+// ═══════════════════════════════════════
+// SESSIONS TAB
+// ═══════════════════════════════════════
+// Session windows (hour ranges, inclusive start, exclusive end)
+const SESSION_WINDOWS = [
+  { label: 'Morning',   start: 6,  end: 11 },
+  { label: 'Afternoon', start: 11, end: 17 },
+  { label: 'Evening',   start: 17, end: 21 },
+];
+
+function renderSessions(h) {
+  const now = new Date();
+  const nowHour = now.getHours();
+
+  // Build list of 4 days starting today
+  const days = [];
+  for (let d = 0; d < 4; d++) {
+    const date = new Date(now);
+    date.setDate(date.getDate() + d);
+    date.setHours(0, 0, 0, 0);
+    days.push(date);
+  }
+
+  const blocks = [];
+
+  for (const dayDate of days) {
+    const dayStr = dayDate.toISOString().slice(0, 10); // "YYYY-MM-DD"
+    const isToday = dayDate.getTime() === new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const dayLabel = isToday ? 'Today' : dayDate.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+
+    const sessionCards = SESSION_WINDOWS.map(win => {
+      // Skip past windows for today
+      const isPast = isToday && win.end <= nowHour;
+
+      // Gather hourly indices for this window
+      const indices = [];
+      for (let j = 0; j < h.time.length; j++) {
+        const ht = h.time[j];
+        if (!ht.startsWith(dayStr)) continue;
+        const hourMatch = ht.match(/T(\d{2}):/);
+        if (!hourMatch) continue;
+        const hr = parseInt(hourMatch[1], 10);
+        if (hr >= win.start && hr < win.end) indices.push(j);
+      }
+
+      if (indices.length === 0) {
+        // No data for this window (e.g. beyond forecast range)
+        return `<div class="session-card${isPast?' past':''}">
+          <div class="session-label">${win.label}</div>
+          <div class="session-icon">—</div>
+          <div class="session-temp">—</div>
+          <div class="session-tennis-dot" style="background:rgba(255,255,255,0.1);color:var(--muted)">—</div>
+        </div>`;
+      }
+
+      const avgTemp = Math.round(indices.reduce((s,j)=>s+(h.temperature_2m[j]??60),0)/indices.length);
+      const avgWind = Math.round(indices.reduce((s,j)=>s+(h.wind_speed_10m[j]??0),0)/indices.length);
+      const maxPrecip = Math.max(...indices.map(j=>h.precipitation_probability[j]??0));
+      const avgWetness = indices.reduce((s,j)=>s+(hourlyWetness[j]??0),0)/indices.length;
+
+      // Dominant WMO code (most common)
+      const codeCounts = {};
+      indices.forEach(j => { const c=h.weather_code[j]??0; codeCounts[c]=(codeCounts[c]||0)+1; });
+      const domCode = parseInt(Object.entries(codeCounts).sort((a,b)=>b[1]-a[1])[0][0],10);
+      const [,icon] = WMO[domCode] || ['','🌡'];
+
+      // Average tennis score across window hours
+      const scores = indices.map(j => {
+        const t = Math.round(h.temperature_2m[j]);
+        const w = Math.round(h.wind_speed_10m[j]);
+        const g = Math.round(h.wind_gusts_10m[j] ?? w * 1.4);
+        const p = h.precipitation_probability[j] ?? 0;
+        const wet = hourlyWetness[j] ?? 0;
+        return tennisMini(t, w, p, g, wet);
+      });
+      const avgScore = Math.round(scores.reduce((a,b)=>a+b,0)/scores.length);
+
+      const wetBadge = avgWetness > 0.05
+        ? `<div class="session-wet-badge">💧 wet</div>`
+        : '';
+
+      return `<div class="session-card${isPast?' past':''}">
+        <div class="session-label">${win.label}</div>
+        <div class="session-icon">${icon}</div>
+        <div class="session-temp">${avgTemp}°</div>
+        <div class="session-wind">${avgWind} mph</div>
+        <div class="session-tennis-dot" style="background:${tennisDotColor(avgScore)}">${avgScore}</div>
+        ${wetBadge}
+      </div>`;
+    });
+
+    blocks.push(`<div class="session-day-block">
+      <div class="session-day-header">${dayLabel}</div>
+      <div class="session-cards-row">${sessionCards.join('')}</div>
+    </div>`);
+  }
+
+  document.getElementById('sessionsContent').innerHTML =
+    `<div class="sessions-container">${blocks.join('')}</div>`;
 }
 
 // ═══════════════════════════════════════
@@ -743,12 +1017,36 @@ function twsComponents(T, W, G, R) {
     rain: Math.round(Math.exp(-4 * R) * 100),
   };
 }
-// For forecast rows: precipProb is 0–100, gust is mph (optional — estimates if absent)
-function tennisMini(temp, wind, precipProb, gust) {
+
+// For forecast rows: precipProb is 0–100, gust is mph (optional), wetness in inches
+function tennisMini(temp, wind, precipProb, gust, wetness = 0) {
   const R = precipProb / 100;
   const G = gust ?? wind * 1.4;
-  return computeTennisWeatherScore(temp, wind, G, R).score;
+  const { score } = computeTennisWeatherScore(temp, wind, G, R);
+
+  // Wetness penalty
+  let wetnessScore;
+  if (wetness <= 0.01) wetnessScore = 100;
+  else if (wetness <= 0.05) wetnessScore = 60;
+  else if (wetness <= 0.15) wetnessScore = 30;
+  else if (wetness <= 0.30) wetnessScore = 10;
+  else wetnessScore = 0;
+
+  // Blend: wetness overrides if worse than rain probability alone
+  const rain_score_only = Math.round(Math.exp(-4 * R) * 100);
+  const effective_rain = Math.min(rain_score_only, wetnessScore);
+
+  // Recompute with effective rain
+  const temp_s = Math.exp(-Math.pow(temp - 72, 2) / (2 * Math.pow(15, 2)));
+  const wind_s = 1 / (1 + Math.exp((wind - 10) / 3));
+  const gust_s = 1 / (1 + Math.exp((G - wind - 6) / 2));
+  const rain_s = effective_rain / 100;
+
+  return Math.min(100, Math.max(0, Math.round(
+    100 * (0.25 * temp_s + 0.35 * wind_s + 0.25 * gust_s + 0.15 * rain_s)
+  )));
 }
+
 function tennisDotColor(s) {
   if(s>=90)return '#69f0ae'; if(s>=80)return '#b2ff59';
   if(s>=70)return '#eeff41'; if(s>=60)return '#ffab40';
