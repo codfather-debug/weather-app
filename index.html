@@ -162,7 +162,7 @@
   /* Column headers */
   .forecast-cols {
     display: grid;
-    grid-template-columns: 72px 32px 52px 44px 36px 40px;
+    grid-template-columns: 72px 32px 52px 44px 36px 40px 32px;
     gap: 0; padding: 10px 14px 8px;
     border-bottom: 1px solid var(--border);
   }
@@ -175,7 +175,7 @@
   /* Forecast row */
   .fc-row {
     display: grid;
-    grid-template-columns: 72px 32px 52px 44px 36px 40px;
+    grid-template-columns: 72px 32px 52px 44px 36px 40px 32px;
     gap: 0; padding: 11px 14px;
     border-bottom: 1px solid rgba(255,255,255,0.04);
     align-items: center;
@@ -193,6 +193,7 @@
   .fc-temp-lo { font-family: 'Bebas Neue', cursive; font-size: 16px; color: var(--muted); line-height: 1; }
   .fc-wind { font-size: 11px; color: var(--wind); text-align: center; font-weight: 500; }
   .fc-precip { font-size: 11px; color: var(--rain); text-align: center; font-weight: 500; }
+  .fc-uv { font-size: 11px; text-align: center; font-weight: 500; }
 
   /* Mini tennis dot */
   .fc-tennis { display: flex; align-items: center; justify-content: center; }
@@ -370,6 +371,7 @@
             <div class="fc-hdr">Wind</div>
             <div class="fc-hdr">Rain</div>
             <div class="fc-hdr">🎾</div>
+            <div class="fc-hdr">UV</div>
           </div>
           <div id="hourlyRows"><div class="forecast-loading">Loading forecast…</div></div>
         </div>
@@ -386,6 +388,7 @@
             <div class="fc-hdr">Wind</div>
             <div class="fc-hdr">Rain</div>
             <div class="fc-hdr">🎾</div>
+            <div class="fc-hdr">UV</div>
           </div>
           <div id="dailyRows"><div class="forecast-loading">Loading forecast…</div></div>
         </div>
@@ -634,6 +637,9 @@ function renderHourly(h) {
     const code=h.weather_code[i];
     const [,icon]=WMO[code]||['','🌡'];
     const ts=tennisMini(temp,wind,precip,gust);
+    const uv=h.uv_index?.[i];
+    const uvRounded=uv!=null?Math.round(uv):null;
+    const {color:uvColor}=uvInfo(uvRounded);
     const isNow=i===startIdx;
     rows.push(`<div class="fc-row">
       <div><div class="fc-time">${isNow?'Now':dt.toLocaleTimeString([],{hour:'numeric',hour12:true})}</div><div class="fc-time-sub">${isNow?'':dt.toLocaleDateString([],{weekday:'short'})}</div></div>
@@ -642,6 +648,7 @@ function renderHourly(h) {
       <div class="fc-wind">${wind}<span style="font-size:9px;opacity:0.7"> mph</span></div>
       <div class="fc-precip">${precip}<span style="font-size:9px;opacity:0.7">%</span></div>
       <div class="fc-tennis"><div class="tennis-dot" style="background:${tennisDotColor(ts)}">${ts}</div></div>
+      <div class="fc-uv" style="color:${uvColor}">${uvRounded??'—'}</div>
     </div>`);
   }
   document.getElementById('hourlyRows').innerHTML=rows.join('');
@@ -662,6 +669,9 @@ function renderDaily(d) {
     const avgTemp=(hi+lo)/2;
     const gust=Math.round(d.wind_gusts_10m_max[i]??wind*1.4);
     const ts=tennisMini(avgTemp,wind,precip,gust);
+    const uvMax=d.uv_index_max?.[i];
+    const uvMaxRounded=uvMax!=null?Math.round(uvMax):null;
+    const {color:uvColor}=uvInfo(uvMaxRounded);
     const isToday=dt.setHours(0,0,0,0)===today.getTime();
     const label=isToday?'Today':dt.toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'});
     rows.push(`<div class="fc-row">
@@ -671,6 +681,7 @@ function renderDaily(d) {
       <div class="fc-wind">${wind}<span style="font-size:9px;opacity:0.7"> mph</span></div>
       <div class="fc-precip">${precip}<span style="font-size:9px;opacity:0.7">%</span></div>
       <div class="fc-tennis"><div class="tennis-dot" style="background:${tennisDotColor(ts)}">${ts}</div></div>
+      <div class="fc-uv" style="color:${uvColor}">${uvMaxRounded??'—'}</div>
     </div>`);
   }
   document.getElementById('dailyRows').innerHTML=rows.join('');
