@@ -256,6 +256,9 @@
     border: 1px solid rgba(100,181,246,0.25); border-radius: 8px; padding: 2px 6px;
     white-space: nowrap;
   }
+  .wet-warning {
+    font-size: 10px; color: #ffab40; padding: 2px 0 4px; font-style: italic;
+  }
   .sessions-note { font-size: 10px; color: var(--muted); text-align: center; padding: 8px 0 2px; font-style: italic; }
 
   /* ── Footer ── */
@@ -818,7 +821,7 @@ function renderDaily(d, h) {
         const hourMatch = ht.match(/T(\d{2}):/);
         if (!hourMatch) continue;
         const hr = parseInt(hourMatch[1], 10);
-        if (hr >= 0 && hr < 9 && (hourlyWetness[j] ?? 0) > 0.1) {
+        if (hr >= 0 && hr < 9 && (hourlyWetness[j] ?? 0) > 0.05) {
           hasMorningWet = true;
           break;
         }
@@ -868,9 +871,9 @@ function renderDaily(d, h) {
 // ═══════════════════════════════════════
 // Session windows (hour ranges, inclusive start, exclusive end)
 const SESSION_WINDOWS = [
-  { label: 'Morning',   start: 6,  end: 11 },
-  { label: 'Afternoon', start: 11, end: 17 },
-  { label: 'Evening',   start: 17, end: 21 },
+  { label: '6–11am',   start: 6,  end: 11 },
+  { label: '11am–5pm', start: 11, end: 17 },
+  { label: '5–9pm',    start: 17, end: 21 },
 ];
 
 function renderSessions(h) {
@@ -940,7 +943,7 @@ function renderSessions(h) {
       });
       const avgScore = Math.round(scores.reduce((a,b)=>a+b,0)/scores.length);
 
-      const wetBadge = avgWetness > 0.05
+      const wetBadge = avgWetness > 0.02
         ? `<div class="session-wet-badge">💧 wet</div>`
         : '';
 
