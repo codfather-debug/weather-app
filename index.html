@@ -485,6 +485,8 @@ let activeForecastTab = 'hourly';
 
 // Module-level wetness array populated after forecast fetch
 let hourlyWetness = [];
+let currentHourWetness = 0;
+let lastTennisRenderParams = null;
 
 function persistLocs() { localStorage.setItem('wx_locs', JSON.stringify(savedLocs)); }
 
@@ -728,7 +730,9 @@ function renderHourly(h) {
   for(let i=0;i<h.time.length;i++){
     if(new Date(h.time[i])>=now){startIdx=i;break;}
   }
+  currentHourWetness = hourlyWetness[startIdx] ?? 0;
   renderUV(h.uv_index?.[startIdx]);
+  if (lastTennisRenderParams) renderTennis(lastTennisRenderParams);
   const rows=[];
   for(let i=startIdx;i<Math.min(startIdx+48,h.time.length);i++){
     const dt=new Date(h.time[i]);
@@ -996,13 +1000,32 @@ function setSource(name,sid) {
 // TENNIS WEATHER SCORE (TWS)
 // T = °F, W = sustained mph, G = gust mph, R = rain probability 0–1
 // ═══════════════════════════════════════
+
+// Rain as a multiplicative penalty:
+// 0% → ×1.0 | 30% → ×0.70 | 50% → ×0.40 | 70% → ×0.10 | 100% → ×0.0
+function rainMultiplier(R) {
+  if (R <= 0)   return 1.0;
+  if (R >= 1.0) return 0.0;
+  if (R <= 0.3) return 1.0 - (R / 0.3) * 0.3;
+  if (R <= 0.7) return 0.7 - ((R - 0.3) / 0.4) * 0.6;
+  return Math.max(0, 0.1 - ((R - 0.7) / 0.3) * 0.1);
+}
+
+// Wet court multiplier: any standing water tanks the score
+function wetnessMultiplier(w) {
+  if (w <= 0.01) return 1.0;
+  if (w <= 0.05) return 0.4;  // damp
+  if (w <= 0.15) return 0.1;  // wet
+  return 0.0;                  // unplayable
+}
+
 function computeTennisWeatherScore(T, W, G, R) {
   const temp_score = Math.exp(-Math.pow(T - 72, 2) / (2 * Math.pow(15, 2)));
   const wind_score = 1 / (1 + Math.exp((W - 10) / 3));
   const gust_score = 1 / (1 + Math.exp((G - W - 6) / 2));
-  const rain_score = Math.exp(-4 * R);
-  const raw = 0.25 * temp_score + 0.35 * wind_score + 0.25 * gust_score + 0.15 * rain_score;
-  const score = Math.min(100, Math.max(0, Math.round(raw * 100)));
+  // Base normalized to 0–1 (original weights 0.25/0.35/0.25 sum to 0.85)
+  const base = (0.25 * temp_score + 0.35 * wind_score + 0.25 * gust_score) / 0.85;
+  const score = Math.min(100, Math.max(0, Math.round(base * rainMultiplier(R) * 100)));
   let category;
   if (score >= 90) category = 'Elite tennis conditions';
   else if (score >= 80) category = 'Excellent';
@@ -1017,7 +1040,7 @@ function twsComponents(T, W, G, R) {
     temp: Math.round(Math.exp(-Math.pow(T - 72, 2) / (2 * Math.pow(15, 2))) * 100),
     wind: Math.round((1 / (1 + Math.exp((W - 10) / 3))) * 100),
     gust: Math.round((1 / (1 + Math.exp((G - W - 6) / 2))) * 100),
-    rain: Math.round(Math.exp(-4 * R) * 100),
+    rain: Math.round(rainMultiplier(R) * 100),
   };
 }
 
@@ -1026,28 +1049,7 @@ function tennisMini(temp, wind, precipProb, gust, wetness = 0) {
   const R = precipProb / 100;
   const G = gust ?? wind * 1.4;
   const { score } = computeTennisWeatherScore(temp, wind, G, R);
-
-  // Wetness penalty
-  let wetnessScore;
-  if (wetness <= 0.01) wetnessScore = 100;
-  else if (wetness <= 0.05) wetnessScore = 60;
-  else if (wetness <= 0.15) wetnessScore = 30;
-  else if (wetness <= 0.30) wetnessScore = 10;
-  else wetnessScore = 0;
-
-  // Blend: wetness overrides if worse than rain probability alone
-  const rain_score_only = Math.round(Math.exp(-4 * R) * 100);
-  const effective_rain = Math.min(rain_score_only, wetnessScore);
-
-  // Recompute with effective rain
-  const temp_s = Math.exp(-Math.pow(temp - 72, 2) / (2 * Math.pow(15, 2)));
-  const wind_s = 1 / (1 + Math.exp((wind - 10) / 3));
-  const gust_s = 1 / (1 + Math.exp((G - wind - 6) / 2));
-  const rain_s = effective_rain / 100;
-
-  return Math.min(100, Math.max(0, Math.round(
-    100 * (0.25 * temp_s + 0.35 * wind_s + 0.25 * gust_s + 0.15 * rain_s)
-  )));
+  return Math.max(0, Math.round(score * wetnessMultiplier(wetness)));
 }
 
 function tennisDotColor(s) {
@@ -1065,9 +1067,11 @@ function tennisVerdict(s) {
 }
 function factorColor(s){if(s>=80)return'#69f0ae';if(s>=60)return'#b2ff59';if(s>=40)return'#ffab40';return'#ef5350';}
 function renderTennis({temp, windSpeedMph, windGustMph, rainProb}) {
+  lastTennisRenderParams = {temp, windSpeedMph, windGustMph, rainProb};
   const G = windGustMph ?? windSpeedMph * 1.4;
   const R = rainProb ?? 0;
-  const {score} = computeTennisWeatherScore(temp, windSpeedMph, G, R);
+  const {score: rawScore} = computeTennisWeatherScore(temp, windSpeedMph, G, R);
+  const score = Math.max(0, Math.round(rawScore * wetnessMultiplier(currentHourWetness)));
   const comps = twsComponents(temp, windSpeedMph, G, R);
   const {text, color} = tennisVerdict(score);
   document.getElementById('tennisScore').textContent = score;
