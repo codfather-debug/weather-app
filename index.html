@@ -1004,7 +1004,7 @@ function renderHourly(h) {
       <div class="fc-temp">${temp}°</div>
       <div class="fc-wind">${wind}<span style="font-size:9px;opacity:0.7"> mph</span></div>
       <div class="fc-precip">${precip}<span style="font-size:9px;opacity:0.7">%</span></div>
-      <div class="fc-tennis"><div class="tennis-dot" style="background:${tennisDotColor(ts)}">${tennisDotContent(ts)}</div></div>
+      <div class="fc-tennis"><div class="tennis-dot" style="background:${tennisDotColor(ts)}">${ts}</div></div>
       <div class="fc-uv" style="color:${uvColor}">${uvRounded??'—'}</div>
     </div>`);
   }
@@ -1133,7 +1133,7 @@ function renderDaily(d, h) {
         <div class="fc-temp-range"><div class="fc-temp-hi">${hi}°</div><div class="fc-temp-lo">${lo}°</div></div>
         <div class="fc-wind">${wind}<span style="font-size:9px;opacity:0.7"> mph</span></div>
         <div class="fc-precip">${precip}<span style="font-size:9px;opacity:0.7">%</span></div>
-        <div class="fc-tennis"><div class="tennis-dot" style="background:${tennisDotColor(ts)}">${tennisDotContent(ts)}</div></div>
+        <div class="fc-tennis"><div class="tennis-dot" style="background:${tennisDotColor(ts)}">${ts}</div></div>
         <div class="fc-uv" style="color:${uvColor}">${uvMaxRounded??'—'}</div>
       </div>
       ${wetWarningHtml ? `<div style="padding: 0 14px 8px;">${wetWarningHtml}</div>` : ''}
@@ -1248,7 +1248,7 @@ function renderSessions(h) {
           <div class="session-tennis-dot" style="background:rgba(255,255,255,0.1);color:var(--muted)">—</div>
         </div>`;
       }
-      const isBest = winIdx === bestSessionIdx && bestSessionScore > 0;
+      const isBest = winIdx === bestSessionIdx && bestSessionScore >= 40;
       const starBadge = isBest ? `<div class="session-best-badge">★ Best</div>` : '';
       const dotStyle = d.isLimitedLight
         ? `background:#555;color:rgba(232,234,240,0.5)`
@@ -1258,7 +1258,7 @@ function renderSessions(h) {
         <div class="session-icon">${d.icon}</div>
         <div class="session-temp">${d.avgTemp}°</div>
         <div class="session-wind">${d.avgWind} mph</div>
-        <div class="session-tennis-dot" style="${dotStyle}">${tennisDotContent(d.avgScore)}</div>
+        <div class="session-tennis-dot" style="${dotStyle}">${d.avgScore}</div>
         ${starBadge}
         ${d.wetBadge}
         ${d.sunsetFlagHtml}
@@ -1367,9 +1367,7 @@ function tennisDotColor(s) {
   if(s>=70)return '#eeff41'; if(s>=60)return '#ffab40';
   if(s>=40)return '#ff7043'; if(s>=20)return '#ef5350'; return '#ef5350';
 }
-function tennisDotContent(s) {
-  return s < 20 ? '✕' : s;
-}
+
 function tennisVerdict(s) {
   if(s>=90)return{text:'Elite — get out there',color:'#69f0ae'};
   if(s>=80)return{text:'Excellent conditions',color:'#b2ff59'};
