@@ -515,6 +515,12 @@
           </svg>
           Refresh
         </button>
+        <button class="refresh-btn" id="clearCacheBtn" onclick="onClearCacheClick()">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
+          </svg>
+          Clear Cache
+        </button>
       </div>
       <div class="updated-time" id="updatedTime">—</div>
     </div>
@@ -689,6 +695,19 @@ async function onRefreshClick() {
   const lon=activeLocId===GPS_ID?gpsLon:savedLocs.find(l=>l.id===activeLocId)?.lon;
   if(lat&&lon) await Promise.all([fetchWeather(lat,lon), fetchForecast(lat,lon)]);
   btn.classList.remove('spinning');
+}
+
+// ═══════════════════════════════════════
+// CLEAR CACHE
+// ═══════════════════════════════════════
+async function onClearCacheClick() {
+  const btn = document.getElementById('clearCacheBtn');
+  btn.classList.add('spinning');
+  if ('caches' in window) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map(k => caches.delete(k)));
+  }
+  window.location.replace(window.location.pathname + '?nocache=' + Date.now());
 }
 
 // ═══════════════════════════════════════
@@ -1300,6 +1319,7 @@ function wetnessMultiplier(w) {
 }
 
 function computeTennisWeatherScore(T, W, G, R) {
+  if (T < 30) return { score: 0, category: 'Bad' };
   const temp_score = Math.exp(-Math.pow(T - 72, 2) / (2 * Math.pow(15, 2)));
   const wind_score = 1 / (1 + Math.exp((W - 10) / 3));
   const gust_score = 1 / (1 + Math.exp((G - W - 6) / 2));
@@ -1316,6 +1336,7 @@ function computeTennisWeatherScore(T, W, G, R) {
   return { score, category };
 }
 function twsComponents(T, W, G, R) {
+  if (T < 30) return { temp: 0, wind: 0, gust: 0, rain: 0 };
   return {
     temp: Math.round(Math.exp(-Math.pow(T - 72, 2) / (2 * Math.pow(15, 2))) * 100),
     wind: Math.round((1 / (1 + Math.exp((W - 10) / 3))) * 100),
