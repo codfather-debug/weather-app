@@ -1317,6 +1317,7 @@ function computeTennisWeatherScore(T, W, G, R) {
   return { score, category };
 }
 function twsComponents(T, W, G, R) {
+  if (T < 30) return { temp: 0, wind: 0, gust: 0, rain: 0 };
   return {
     temp: Math.round(Math.exp(-Math.pow(T - 72, 2) / (2 * Math.pow(15, 2))) * 100),
     wind: Math.round((1 / (1 + Math.exp((W - 10) / 3))) * 100),
