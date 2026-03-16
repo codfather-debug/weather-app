@@ -1300,6 +1300,7 @@ function wetnessMultiplier(w) {
 }
 
 function computeTennisWeatherScore(T, W, G, R) {
+  if (T < 30) return { score: 0, category: 'Bad' };
   const temp_score = Math.exp(-Math.pow(T - 72, 2) / (2 * Math.pow(15, 2)));
   const wind_score = 1 / (1 + Math.exp((W - 10) / 3));
   const gust_score = 1 / (1 + Math.exp((G - W - 6) / 2));
