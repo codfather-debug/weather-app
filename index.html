@@ -304,6 +304,25 @@
     border-color: rgba(255,213,79,0.45);
     box-shadow: 0 0 10px rgba(255,213,79,0.12);
   }
+  .session-card { cursor: pointer; }
+  .session-card.active { border-color: rgba(255,255,255,0.28); background: var(--panel-hover); }
+  .session-detail { display: none; margin: 0 0 8px; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); background: var(--panel); }
+  .session-detail.open { display: block; }
+  /* Purpose-built grid for session hourly detail: Time|Icon|Temp|Wind|Rain|Court|🎾|UV */
+  .sd-cols {
+    display: grid; grid-template-columns: 50px 24px 36px 38px 30px 42px 26px 24px;
+    gap: 0; padding: 5px 12px 4px; border-bottom: 1px solid var(--border);
+  }
+  .sd-row {
+    display: grid; grid-template-columns: 50px 24px 36px 38px 30px 42px 26px 24px;
+    gap: 0; padding: 7px 12px; align-items: center;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .sd-row:last-child { border-bottom: none; }
+  .court-pill {
+    font-size: 9px; font-weight: 600; padding: 2px 5px; border-radius: 5px;
+    text-transform: uppercase; letter-spacing: 0.4px; display: inline-block; white-space: nowrap;
+  }
 
   /* ── Footer ── */
   .footer { display: flex; align-items: center; justify-content: space-between; padding: 0 2px; opacity: 0; animation: fadeUp 0.5s ease 0.75s forwards; margin-bottom: 8px; }
@@ -465,7 +484,6 @@
       <div class="forecast-tab-bar">
         <div class="forecast-tab active" id="ftab-hourly" onclick="switchForecastTab('hourly')">Hourly</div>
         <div class="forecast-tab" id="ftab-daily" onclick="switchForecastTab('daily')">7-Day</div>
-        <div class="forecast-tab" id="ftab-sessions" onclick="switchForecastTab('sessions')">Sessions</div>
       </div>
 
       <!-- Hourly panel -->
@@ -502,11 +520,6 @@
         <div class="forecast-note">7-day outlook · Open-Meteo</div>
       </div>
 
-      <!-- Sessions panel -->
-      <div class="forecast-panel" id="fpanel-sessions">
-        <div id="sessionsContent"><div class="forecast-loading">Loading sessions…</div></div>
-        <div class="sessions-note">Today + 3 days · Morning / Afternoon / Evening</div>
-      </div>
     </div>
 
     <div class="footer">
@@ -595,10 +608,21 @@ function deleteLoc(id) { savedLocs=savedLocs.filter(l=>l.id!==id); persistLocs()
 // ═══════════════════════════════════════
 function switchForecastTab(tab) {
   activeForecastTab = tab;
-  ['hourly','daily','sessions'].forEach(t => {
+  ['hourly','daily'].forEach(t => {
     document.getElementById(`ftab-${t}`).classList.toggle('active', t===tab);
     document.getElementById(`fpanel-${t}`).classList.toggle('active', t===tab);
   });
+}
+function toggleSessionDetail(cardId, detId) {
+  const det = document.getElementById(detId);
+  if (!det) return;
+  const isOpen = det.classList.contains('open');
+  document.querySelectorAll('.session-detail.open').forEach(el => el.classList.remove('open'));
+  document.querySelectorAll('.session-card.active').forEach(el => el.classList.remove('active'));
+  if (!isOpen) {
+    det.classList.add('open');
+    document.getElementById(cardId)?.classList.add('active');
+  }
 }
 
 // ═══════════════════════════════════════
@@ -822,7 +846,6 @@ function computeWetness(h) {
 async function fetchForecast(lat,lon) {
   document.getElementById('hourlyRows').innerHTML='<div class="forecast-loading">Loading…</div>';
   document.getElementById('dailyRows').innerHTML='<div class="forecast-loading">Loading…</div>';
-  document.getElementById('sessionsContent').innerHTML='<div class="forecast-loading">Loading…</div>';
   try {
     const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
       +`&hourly=temperature_2m,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m,cloud_cover,uv_index`
@@ -847,11 +870,9 @@ async function fetchForecast(lat,lon) {
 
     renderHourly(data.hourly);
     renderDaily(data.daily, data.hourly);
-    renderSessions(data.hourly);
   } catch(e) {
     document.getElementById('hourlyRows').innerHTML='<div class="forecast-loading">Failed to load forecast</div>';
     document.getElementById('dailyRows').innerHTML='<div class="forecast-loading">Failed to load forecast</div>';
-    document.getElementById('sessionsContent').innerHTML='<div class="forecast-loading">Failed to load forecast</div>';
   }
 }
 
@@ -998,8 +1019,9 @@ function renderHourly(h) {
     const uvRounded=uv!=null?Math.round(uv):null;
     const {color:uvColor}=uvInfo(uvRounded);
     const isNow=i===startIdx;
+    const cl=courtLabel(wetness);
     rows.push(`<div class="fc-row">
-      <div><div class="fc-time">${isNow?'Now':dt.toLocaleTimeString([],{hour:'numeric',hour12:true})}</div><div class="fc-time-sub">${isNow?'':dt.toLocaleDateString([],{weekday:'short'})}</div></div>
+      <div><div class="fc-time">${isNow?'Now':dt.toLocaleTimeString([],{hour:'numeric',hour12:true})}</div><div class="fc-time-sub">${isNow?'':dt.toLocaleDateString([],{weekday:'short'})}</div><div class="fc-time-sub" style="color:${cl.color}">${cl.text}</div></div>
       <div class="fc-icon">${icon}</div>
       <div class="fc-temp">${temp}°</div>
       <div class="fc-wind">${wind}<span style="font-size:9px;opacity:0.7"> mph</span></div>
@@ -1126,6 +1148,99 @@ function renderDaily(d, h) {
       }
     }
 
+    // Session cards for this day
+    let sessionCardsHtml = '';
+    if (h && h.time) {
+      const dayIsToday = new Date(d.time[i]+'T12:00:00').setHours(0,0,0,0) === today.getTime();
+      const nowHour = dayIsToday ? new Date().getHours() : -1;
+      const sunEntry = dailySunTimes.find(s => s.date === d.time[i]);
+      let sunsetMins = null;
+      if (sunEntry?.sunset) {
+        const sm = sunEntry.sunset.match(/T(\d{2}):(\d{2})/);
+        if (sm) sunsetMins = parseInt(sm[1],10)*60 + parseInt(sm[2],10);
+      }
+      const sessionData = SESSION_WINDOWS.map(win => {
+        const isPast = dayIsToday && win.end <= nowHour;
+        const idxs = [];
+        for (let j = 0; j < h.time.length; j++) {
+          const ht = h.time[j]; if (!ht.startsWith(d.time[i])) continue;
+          const hm = ht.match(/T(\d{2}):/); if (!hm) continue;
+          const hr = parseInt(hm[1],10);
+          if (hr >= win.start && hr < win.end) idxs.push(j);
+        }
+        if (idxs.length === 0) return { win, isPast, empty: true, idxs: [] };
+        const avgTemp = Math.round(idxs.reduce((s,j)=>s+(h.temperature_2m[j]??60),0)/idxs.length);
+        const avgWind = Math.round(idxs.reduce((s,j)=>s+(h.wind_speed_10m[j]??0),0)/idxs.length);
+        const avgWetness = idxs.reduce((s,j)=>s+(hourlyWetness[j]??0),0)/idxs.length;
+        const maxWetness = Math.max(...idxs.map(j=>hourlyWetness[j]??0));
+        const cc = {}; idxs.forEach(j=>{const c=h.weather_code[j]??0;cc[c]=(cc[c]||0)+1;});
+        const [,sIcon] = WMO[parseInt(Object.entries(cc).sort((a,b)=>b[1]-a[1])[0][0],10)] || ['','🌡'];
+        const scores = idxs.map(j=>{const t=Math.round(h.temperature_2m[j]),w=Math.round(h.wind_speed_10m[j]),g=Math.round(h.wind_gusts_10m[j]??w*1.4),p=h.precipitation_probability[j]??0;return tennisMini(t,w,p,g,hourlyWetness[j]??0);});
+        const avgScore = Math.round(scores.reduce((a,b)=>a+b,0)/scores.length);
+        const cl = courtLabel(maxWetness);
+        const courtStatusHtml = `<div class="court-pill" style="background:${cl.bg};color:${cl.color}">${cl.text}</div>`;
+        let sunsetFlag = '';
+        if (win.start === 17 && sunsetMins !== null) {
+          if (sunsetMins < 1110) sunsetFlag = `<div class="session-sunset-warning">⚠️ limited light</div>`;
+          else if (sunsetMins < 1200) { const sh=Math.floor(sunsetMins/60),sm2=sunsetMins%60; sunsetFlag=`<div class="session-sunset-note">🌅 sets ${sh>12?sh-12:(sh===0?12:sh)}:${String(sm2).padStart(2,'0')}${sh<12?'am':'pm'}</div>`; }
+        }
+        const isLimitedLight = win.start === 17 && sunsetMins !== null && sunsetMins < 1110;
+        return { win, isPast, empty: false, avgTemp, avgWind, sIcon, avgScore, courtStatusHtml, sunsetFlag, isLimitedLight, idxs };
+      });
+      let bestIdx=-1, bestSc=-1;
+      sessionData.forEach((sd,wi)=>{if(!sd.empty&&!sd.isPast&&sd.avgScore>bestSc){bestSc=sd.avgScore;bestIdx=wi;}});
+      const cards = [], details = [];
+      sessionData.forEach((sd,wi)=>{
+        const cardId = `scard-${d.time[i]}-${wi}`;
+        const detId  = `sdet-${d.time[i]}-${wi}`;
+        if (sd.empty) {
+          cards.push(`<div class="session-card${sd.isPast?' past':''}"><div class="session-label">${sd.win.label}</div><div class="session-icon">—</div><div class="session-temp">—</div><div class="session-tennis-dot" style="background:rgba(255,255,255,0.1);color:var(--muted)">—</div></div>`);
+          details.push(`<div id="${detId}" class="session-detail"></div>`);
+          return;
+        }
+        const isBest = wi===bestIdx && bestSc>=40;
+        const dotStyle = sd.isLimitedLight?`background:#555;color:rgba(232,234,240,0.5)`:`background:${tennisDotColor(sd.avgScore)}`;
+        cards.push(`<div class="session-card${sd.isPast?' past':''}${isBest?' best-session':''}" id="${cardId}" onclick="toggleSessionDetail('${cardId}','${detId}')">
+          <div class="session-label">${sd.win.label}</div>
+          <div class="session-icon">${sd.sIcon}</div>
+          <div class="session-temp">${sd.avgTemp}°</div>
+          <div class="session-wind">${sd.avgWind} mph</div>
+          <div class="session-tennis-dot" style="${dotStyle}">${sd.avgScore}</div>
+          ${isBest?'<div class="session-best-badge">★ Best</div>':''}
+          ${sd.courtStatusHtml}${sd.sunsetFlag}
+        </div>`);
+        // Build hourly detail rows for this session window
+        const detailRows = sd.idxs.map(j=>{
+          const dt=new Date(h.time[j]);
+          const t=Math.round(h.temperature_2m[j]), w=Math.round(h.wind_speed_10m[j]);
+          const g=Math.round(h.wind_gusts_10m[j]??w*1.4), p=h.precipitation_probability[j]??0;
+          const [,hIcon]=WMO[h.weather_code[j]]||['','🌡'];
+          const wet=hourlyWetness[j]??0;
+          const ts=tennisMini(t,w,p,g,wet);
+          const cl=courtLabel(wet);
+          const uvR=h.uv_index?.[j]!=null?Math.round(h.uv_index[j]):null;
+          const {color:uvC}=uvInfo(uvR);
+          return `<div class="sd-row">
+            <div class="fc-time">${dt.toLocaleTimeString([],{hour:'numeric',hour12:true})}</div>
+            <div class="fc-icon" style="font-size:16px">${hIcon}</div>
+            <div class="fc-temp">${t}°</div>
+            <div class="fc-wind">${w}<span style="font-size:9px;opacity:0.7"> mph</span></div>
+            <div class="fc-precip">${p}<span style="font-size:9px;opacity:0.7">%</span></div>
+            <div><span class="court-pill" style="background:${cl.bg};color:${cl.color}">${cl.text}</span></div>
+            <div class="fc-tennis"><div class="tennis-dot" style="background:${tennisDotColor(ts)}">${ts}</div></div>
+            <div class="fc-uv" style="color:${uvC}">${uvR??'—'}</div>
+          </div>`;
+        });
+        details.push(`<div id="${detId}" class="session-detail">
+          <div class="sd-cols">
+            <div class="fc-hdr">Time</div><div class="fc-hdr"></div><div class="fc-hdr">Temp</div><div class="fc-hdr">Wind</div><div class="fc-hdr">Rain</div><div class="fc-hdr">Courts</div><div class="fc-hdr">🎾</div><div class="fc-hdr">UV</div>
+          </div>
+          ${detailRows.join('')}
+        </div>`);
+      });
+      sessionCardsHtml = `<div class="session-cards-row" style="padding:4px 0 6px;">${cards.join('')}</div>${details.join('')}`;
+    }
+
     rows.push(`<div class="fc-row-wrap">
       <div class="fc-row${bestDayClass}">
         <div><div class="fc-time" style="font-size:${isToday?'13px':'11px'}">${label}${bestBadge}</div></div>
@@ -1137,143 +1252,20 @@ function renderDaily(d, h) {
         <div class="fc-uv" style="color:${uvColor}">${uvMaxRounded??'—'}</div>
       </div>
       ${wetWarningHtml ? `<div style="padding: 0 14px 8px;">${wetWarningHtml}</div>` : ''}
+      ${sessionCardsHtml}
     </div>`);
   }
   document.getElementById('dailyRows').innerHTML=rows.join('');
 }
 
-// ═══════════════════════════════════════
-// SESSIONS TAB
-// ═══════════════════════════════════════
-// Session windows (hour ranges, inclusive start, exclusive end)
+// Session windows used in 7-day view (inclusive start, exclusive end)
 const SESSION_WINDOWS = [
   { label: '6–11am',   start: 6,  end: 11 },
   { label: '11am–5pm', start: 11, end: 17 },
   { label: '5–9pm',    start: 17, end: 21 },
 ];
 
-function renderSessions(h) {
-  const now = new Date();
-  const nowHour = now.getHours();
 
-  // Build list of 4 days starting today
-  const days = [];
-  for (let d = 0; d < 4; d++) {
-    const date = new Date(now);
-    date.setDate(date.getDate() + d);
-    date.setHours(0, 0, 0, 0);
-    days.push(date);
-  }
-
-  const blocks = [];
-
-  for (const dayDate of days) {
-    const dayStr = dayDate.toISOString().slice(0, 10); // "YYYY-MM-DD"
-    const isToday = dayDate.getTime() === new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const dayLabel = isToday ? 'Today' : dayDate.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
-
-    // Feature 2: find sunset for this day
-    const sunEntry = dailySunTimes.find(s => s.date === dayStr);
-    let sunsetMinutes = null; // minutes since midnight
-    if (sunEntry && sunEntry.sunset) {
-      // Format: "2025-06-01T20:15"
-      const sunsetMatch = sunEntry.sunset.match(/T(\d{2}):(\d{2})/);
-      if (sunsetMatch) {
-        sunsetMinutes = parseInt(sunsetMatch[1], 10) * 60 + parseInt(sunsetMatch[2], 10);
-      }
-    }
-
-    // First pass: compute data for each session window
-    const sessionData = SESSION_WINDOWS.map(win => {
-      const isPast = isToday && win.end <= nowHour;
-      const indices = [];
-      for (let j = 0; j < h.time.length; j++) {
-        const ht = h.time[j];
-        if (!ht.startsWith(dayStr)) continue;
-        const hourMatch = ht.match(/T(\d{2}):/);
-        if (!hourMatch) continue;
-        const hr = parseInt(hourMatch[1], 10);
-        if (hr >= win.start && hr < win.end) indices.push(j);
-      }
-      if (indices.length === 0) return { win, isPast, empty: true };
-
-      const avgTemp = Math.round(indices.reduce((s,j)=>s+(h.temperature_2m[j]??60),0)/indices.length);
-      const avgWind = Math.round(indices.reduce((s,j)=>s+(h.wind_speed_10m[j]??0),0)/indices.length);
-      const avgWetness = indices.reduce((s,j)=>s+(hourlyWetness[j]??0),0)/indices.length;
-      const codeCounts = {};
-      indices.forEach(j => { const c=h.weather_code[j]??0; codeCounts[c]=(codeCounts[c]||0)+1; });
-      const domCode = parseInt(Object.entries(codeCounts).sort((a,b)=>b[1]-a[1])[0][0],10);
-      const [,icon] = WMO[domCode] || ['','🌡'];
-      const scores = indices.map(j => {
-        const t = Math.round(h.temperature_2m[j]);
-        const w = Math.round(h.wind_speed_10m[j]);
-        const g = Math.round(h.wind_gusts_10m[j] ?? w * 1.4);
-        const p = h.precipitation_probability[j] ?? 0;
-        const wet = hourlyWetness[j] ?? 0;
-        return tennisMini(t, w, p, g, wet);
-      });
-      const avgScore = Math.round(scores.reduce((a,b)=>a+b,0)/scores.length);
-      const wetBadge = avgWetness > 0.02 ? `<div class="session-wet-badge">💧 wet</div>` : '';
-      let sunsetFlagHtml = '';
-      if (win.start === 17 && sunsetMinutes !== null) {
-        const sunsetHr = Math.floor(sunsetMinutes / 60);
-        const sunsetMin = sunsetMinutes % 60;
-        const sunsetStr = `${sunsetHr > 12 ? sunsetHr - 12 : (sunsetHr === 0 ? 12 : sunsetHr)}:${String(sunsetMin).padStart(2,'0')}${sunsetHr < 12 ? 'am' : 'pm'}`;
-        if (sunsetMinutes < 1110) {
-          sunsetFlagHtml = `<div class="session-sunset-warning">⚠️ limited light</div>`;
-        } else if (sunsetMinutes < 1200) {
-          sunsetFlagHtml = `<div class="session-sunset-note">🌅 sets ${sunsetStr}</div>`;
-        }
-      }
-      const isLimitedLight = win.start === 17 && sunsetMinutes !== null && sunsetMinutes < 1110;
-      return { win, isPast, empty: false, avgTemp, avgWind, icon, avgScore, wetBadge, sunsetFlagHtml, isLimitedLight };
-    });
-
-    // Find best non-past session for this day
-    let bestSessionIdx = -1, bestSessionScore = -1;
-    sessionData.forEach((d, i) => {
-      if (!d.empty && !d.isPast && d.avgScore > bestSessionScore) {
-        bestSessionScore = d.avgScore;
-        bestSessionIdx = i;
-      }
-    });
-
-    // Second pass: render HTML
-    const sessionCards = sessionData.map((d, winIdx) => {
-      if (d.empty) {
-        return `<div class="session-card${d.isPast?' past':''}">
-          <div class="session-label">${d.win.label}</div>
-          <div class="session-icon">—</div>
-          <div class="session-temp">—</div>
-          <div class="session-tennis-dot" style="background:rgba(255,255,255,0.1);color:var(--muted)">—</div>
-        </div>`;
-      }
-      const isBest = winIdx === bestSessionIdx && bestSessionScore >= 40;
-      const starBadge = isBest ? `<div class="session-best-badge">★ Best</div>` : '';
-      const dotStyle = d.isLimitedLight
-        ? `background:#555;color:rgba(232,234,240,0.5)`
-        : `background:${tennisDotColor(d.avgScore)}`;
-      return `<div class="session-card${d.isPast?' past':''}${isBest?' best-session':''}">
-        <div class="session-label">${d.win.label}</div>
-        <div class="session-icon">${d.icon}</div>
-        <div class="session-temp">${d.avgTemp}°</div>
-        <div class="session-wind">${d.avgWind} mph</div>
-        <div class="session-tennis-dot" style="${dotStyle}">${d.avgScore}</div>
-        ${starBadge}
-        ${d.wetBadge}
-        ${d.sunsetFlagHtml}
-      </div>`;
-    });
-
-    blocks.push(`<div class="session-day-block">
-      <div class="session-day-header">${dayLabel}</div>
-      <div class="session-cards-row">${sessionCards.join('')}</div>
-    </div>`);
-  }
-
-  document.getElementById('sessionsContent').innerHTML =
-    `<div class="sessions-container">${blocks.join('')}</div>`;
-}
 
 // ═══════════════════════════════════════
 // RENDER CURRENT
@@ -1323,6 +1315,12 @@ function wetnessMultiplier(w) {
   if (w <= 0.05) return 0.4;  // damp
   if (w <= 0.15) return 0.1;  // wet
   return 0.0;                  // unplayable
+}
+function courtLabel(w) {
+  if (w <= 0.01) return { text: 'Dry',     color: 'rgba(255,255,255,0.35)', bg: 'rgba(255,255,255,0.07)' };
+  if (w <= 0.05) return { text: 'Damp',    color: '#ffd54f',                bg: 'rgba(255,213,79,0.13)'  };
+  if (w <= 0.15) return { text: 'Wet',     color: '#ff7043',                bg: 'rgba(255,112,67,0.15)'  };
+  return              { text: 'Flooded', color: '#ef5350',                bg: 'rgba(239,83,80,0.15)'   };
 }
 
 function computeTennisWeatherScore(T, W, G, R) {
