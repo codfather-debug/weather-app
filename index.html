@@ -1200,11 +1200,14 @@ function renderDaily(d, h) {
           const t=Math.round(h.temperature_2m[j]), w=Math.round(h.wind_speed_10m[j]);
           const g=Math.round(h.wind_gusts_10m[j]??w*1.4), p=h.precipitation_probability[j]??0;
           const [,hIcon]=WMO[h.weather_code[j]]||['','🌡'];
-          const ts=tennisMini(t,w,p,g,hourlyWetness[j]??0);
+          const wet=hourlyWetness[j]??0;
+          const ts=tennisMini(t,w,p,g,wet);
           const uvR=h.uv_index?.[j]!=null?Math.round(h.uv_index[j]):null;
           const {color:uvC}=uvInfo(uvR);
+          const cl=courtLabel(wet);
+          const courtHtml=cl?`<div class="fc-time-sub" style="color:${cl.color};font-size:9px">💧 ${cl.text}</div>`:'';
           return `<div class="fc-row">
-            <div><div class="fc-time">${dt.toLocaleTimeString([],{hour:'numeric',hour12:true})}</div></div>
+            <div><div class="fc-time">${dt.toLocaleTimeString([],{hour:'numeric',hour12:true})}</div>${courtHtml}</div>
             <div class="fc-icon">${hIcon}</div>
             <div class="fc-temp">${t}°</div>
             <div class="fc-wind">${w}<span style="font-size:9px;opacity:0.7"> mph</span></div>
@@ -1297,6 +1300,12 @@ function wetnessMultiplier(w) {
   if (w <= 0.05) return 0.4;  // damp
   if (w <= 0.15) return 0.1;  // wet
   return 0.0;                  // unplayable
+}
+function courtLabel(w) {
+  if (w <= 0.01) return null;
+  if (w <= 0.05) return { text: 'damp', color: '#ffd54f' };
+  if (w <= 0.15) return { text: 'wet',  color: '#ff7043' };
+  return { text: 'flooded', color: '#ef5350' };
 }
 
 function computeTennisWeatherScore(T, W, G, R) {
