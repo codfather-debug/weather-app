@@ -8,6 +8,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Tennis Weather">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
   :root {
     --bg: #0a0e1a;
@@ -179,6 +181,69 @@
 
   .forecast-panel { display: none; }
   .forecast-panel.active { display: block; }
+
+  /* ── Radar panel ── */
+  #fpanel-radar .radar-map-wrap {
+    border-radius: 16px; overflow: hidden; border: 1px solid var(--border);
+    height: 320px; position: relative; background: #0d1220;
+  }
+  #radar-map { height: 100%; width: 100%; }
+  .radar-controls {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 10px 14px; margin-top: 8px;
+  }
+  .radar-play-btn {
+    background: rgba(79,195,247,0.15); border: 1px solid rgba(79,195,247,0.3);
+    color: var(--accent); border-radius: 8px; width: 34px; height: 34px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; flex-shrink: 0; transition: background 0.15s;
+  }
+  .radar-play-btn:hover { background: rgba(79,195,247,0.28); }
+  .radar-timeline { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+  .radar-time-label {
+    font-size: 11px; color: var(--accent); font-weight: 500; letter-spacing: 0.3px;
+  }
+  .radar-scrub {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 4px; border-radius: 2px;
+    background: rgba(79,195,247,0.18); outline: none; cursor: pointer;
+  }
+  .radar-scrub::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px;
+    border-radius: 50%; background: var(--accent); cursor: pointer;
+    box-shadow: 0 0 6px rgba(79,195,247,0.6);
+  }
+  .radar-legend {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 10px; color: var(--muted); flex-shrink: 0;
+  }
+  .radar-legend-bar {
+    width: 60px; height: 6px; border-radius: 3px;
+    background: linear-gradient(to right, #00d4ff 0%, #00ff88 25%, #ffee00 50%, #ff8800 75%, #ff0000 100%);
+  }
+  .precip-chart-wrap {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 16px; padding: 14px; margin-top: 8px;
+  }
+  .precip-chart-title {
+    font-size: 11px; font-weight: 500; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 10px;
+  }
+  .precip-bars { display: flex; gap: 4px; align-items: flex-end; height: 60px; }
+  .precip-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .precip-bar-track { width: 100%; height: 48px; background: rgba(255,255,255,0.05); border-radius: 4px; position: relative; overflow: hidden; }
+  .precip-bar-fill { position: absolute; bottom: 0; left: 0; right: 0; border-radius: 4px; transition: height 0.4s ease; }
+  .precip-bar-fill.rain  { background: linear-gradient(to top, #4fc3f7, rgba(79,195,247,0.3)); }
+  .precip-bar-fill.snow  { background: linear-gradient(to top, #b0bec5, rgba(176,190,197,0.3)); }
+  .precip-bar-fill.mixed { background: linear-gradient(to top, #80cbc4, rgba(128,203,196,0.3)); }
+  .precip-bar-pct { font-size: 9px; color: var(--muted); }
+  .precip-bar-time { font-size: 9px; color: var(--muted); white-space: nowrap; }
+  .radar-status { font-size: 11px; color: var(--muted); text-align: center; padding: 8px 0; }
+  /* Leaflet dark override */
+  .leaflet-container { background: #0d1220 !important; }
+  .leaflet-tile { filter: brightness(0.85) saturate(0.7); }
+  .leaflet-control-attribution { display: none !important; }
 
   /* Forecast table */
   .forecast-table {
@@ -484,6 +549,7 @@
       <div class="forecast-tab-bar">
         <div class="forecast-tab active" id="ftab-hourly" onclick="switchForecastTab('hourly')">Hourly</div>
         <div class="forecast-tab" id="ftab-daily" onclick="switchForecastTab('daily')">7-Day</div>
+        <div class="forecast-tab" id="ftab-radar" onclick="switchForecastTab('radar')">Radar</div>
       </div>
 
       <!-- Hourly panel -->
@@ -518,6 +584,31 @@
           <div id="dailyRows"><div class="forecast-loading">Loading forecast…</div></div>
         </div>
         <div class="forecast-note">7-day outlook · Open-Meteo</div>
+      </div>
+
+      <!-- Radar panel -->
+      <div class="forecast-panel" id="fpanel-radar">
+        <div class="radar-map-wrap">
+          <div id="radar-map"></div>
+        </div>
+        <div class="radar-controls">
+          <button class="radar-play-btn" id="radarPlayBtn" onclick="toggleRadarPlay()">
+            <svg id="radarPlayIcon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+          </button>
+          <div class="radar-timeline">
+            <div class="radar-time-label" id="radarTimeLabel">Loading radar…</div>
+            <input type="range" class="radar-scrub" id="radarScrub" min="0" value="0" oninput="onRadarScrub(this.value)">
+          </div>
+          <div class="radar-legend">
+            <div class="radar-legend-bar"></div>
+            <span>Light→Heavy</span>
+          </div>
+        </div>
+        <div class="precip-chart-wrap">
+          <div class="precip-chart-title">4-Hour Precipitation Outlook</div>
+          <div class="precip-bars" id="precipBars"><div class="radar-status">Loading…</div></div>
+        </div>
+        <div class="forecast-note">Radar · RainViewer &nbsp;|&nbsp; Forecast · Open-Meteo</div>
       </div>
 
     </div>
@@ -566,6 +657,12 @@ let hourlyWetness = [];
 let currentHourWetness = 0;
 let lastTennisRenderParams = null;
 
+// Radar state
+let radarMap = null, radarTileLayer = null;
+let radarFrames = [], radarFrameIdx = 0, radarPlaying = false, radarTimer = null;
+let radarCachedHost = 'https://tilecache.rainviewer.com';
+let lastFetchLat = null, lastFetchLon = null, lastHourlyData = null;
+
 // Feature 1: best window result (module-level)
 let bestWindowResult = null;
 
@@ -608,11 +705,141 @@ function deleteLoc(id) { savedLocs=savedLocs.filter(l=>l.id!==id); persistLocs()
 // ═══════════════════════════════════════
 function switchForecastTab(tab) {
   activeForecastTab = tab;
-  ['hourly','daily'].forEach(t => {
+  ['hourly','daily','radar'].forEach(t => {
     document.getElementById(`ftab-${t}`).classList.toggle('active', t===tab);
     document.getElementById(`fpanel-${t}`).classList.toggle('active', t===tab);
   });
+  if (tab === 'radar') initRadarPanel();
 }
+// ═══════════════════════════════════════
+// RADAR (RainViewer + Leaflet)
+// ═══════════════════════════════════════
+async function initRadarPanel() {
+  const lat = lastFetchLat, lon = lastFetchLon;
+  if (!lat || !lon) { document.getElementById('radarTimeLabel').textContent = 'Location unavailable'; return; }
+
+  // Init map once
+  if (!radarMap) {
+    radarMap = L.map('radar-map', { zoomControl: true, attributionControl: false })
+      .setView([lat, lon], 8);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 18, subdomains: 'abcd'
+    }).addTo(radarMap);
+    // User location marker
+    L.circleMarker([lat, lon], {
+      radius: 6, color: '#4fc3f7', fillColor: '#4fc3f7', fillOpacity: 0.9, weight: 2
+    }).addTo(radarMap);
+  } else {
+    radarMap.setView([lat, lon], radarMap.getZoom());
+  }
+  // Force map to recalculate size (panel may have just become visible)
+  setTimeout(() => radarMap.invalidateSize(), 50);
+
+  // Fetch RainViewer frames
+  try {
+    document.getElementById('radarTimeLabel').textContent = 'Fetching radar data…';
+    const rv = await (await fetch('https://api.rainviewer.com/public/weather-maps.json')).json();
+    radarCachedHost = rv.host || 'https://tilecache.rainviewer.com';
+    const past = (rv.radar?.past || []).slice(-6);       // last ~1.5h
+    const nowcast = rv.radar?.nowcast || [];              // up to ~2h ahead
+    radarFrames = [...past, ...nowcast];
+    if (!radarFrames.length) { document.getElementById('radarTimeLabel').textContent = 'Radar unavailable'; return; }
+
+    const scrub = document.getElementById('radarScrub');
+    scrub.max = radarFrames.length - 1;
+    // Start at last past frame (current)
+    radarFrameIdx = past.length - 1;
+    scrub.value = radarFrameIdx;
+
+    showRadarFrame(radarFrameIdx, radarCachedHost);
+    renderPrecipChart(lastHourlyData);
+  } catch(e) {
+    document.getElementById('radarTimeLabel').textContent = 'Radar unavailable';
+  }
+}
+
+function showRadarFrame(idx, host) {
+  const frame = radarFrames[idx];
+  if (!frame || !radarMap) return;
+  host = host || 'https://tilecache.rainviewer.com';
+
+  if (radarTileLayer) { radarMap.removeLayer(radarTileLayer); radarTileLayer = null; }
+  radarTileLayer = L.tileLayer(
+    `${host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`,
+    { opacity: 0.65, maxZoom: 18 }
+  ).addTo(radarMap);
+
+  const ts = frame.time * 1000;
+  const now = Date.now();
+  const diff = Math.round((ts - now) / 60000);
+  const timeStr = new Date(ts).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+  const label = diff < -1
+    ? `${timeStr} (${Math.abs(diff)}m ago)`
+    : diff > 1
+      ? `${timeStr} (+${diff}m forecast)`
+      : `${timeStr} (now)`;
+  document.getElementById('radarTimeLabel').textContent = label;
+  document.getElementById('radarScrub').value = idx;
+}
+
+function onRadarScrub(val) {
+  radarFrameIdx = parseInt(val);
+  stopRadarPlay();
+  // need the host — re-fetch is wasteful, cache it
+  showRadarFrame(radarFrameIdx, radarCachedHost);
+}
+
+function toggleRadarPlay() {
+  radarPlaying ? stopRadarPlay() : startRadarPlay();
+}
+function startRadarPlay() {
+  radarPlaying = true;
+  document.getElementById('radarPlayIcon').innerHTML =
+    '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>';
+  radarTimer = setInterval(() => {
+    radarFrameIdx = (radarFrameIdx + 1) % radarFrames.length;
+    showRadarFrame(radarFrameIdx, radarCachedHost);
+  }, 600);
+}
+function stopRadarPlay() {
+  radarPlaying = false;
+  clearInterval(radarTimer); radarTimer = null;
+  document.getElementById('radarPlayIcon').innerHTML = '<polygon points="5,3 19,12 5,21"/>';
+}
+
+function renderPrecipChart(h) {
+  const el = document.getElementById('precipBars');
+  if (!el) return;
+  if (!h || !h.time) { el.innerHTML = '<div class="radar-status">No data</div>'; return; }
+
+  const now = new Date();
+  // Find index of current hour
+  let startIdx = h.time.findIndex(t => new Date(t) >= now);
+  if (startIdx < 0) startIdx = 0;
+
+  const hours = 8; // show next 8 hours
+  let html = '';
+  for (let i = startIdx; i < Math.min(startIdx + hours, h.time.length); i++) {
+    const prob = h.precipitation_probability?.[i] ?? 0;
+    const amt = h.precipitation?.[i] ?? 0;
+    const code = h.weather_code?.[i] ?? 0;
+    const isSnow = code >= 71 && code <= 77;
+    const isMixed = (code >= 66 && code <= 69) || code === 85 || code === 86;
+    const cls = isSnow ? 'snow' : isMixed ? 'mixed' : 'rain';
+    const timeStr = new Date(h.time[i]).toLocaleTimeString([], {hour:'numeric'});
+    const heightPct = prob;
+    const title = `${prob}% · ${amt > 0 ? amt.toFixed(2)+'"' : 'no precip'}`;
+    html += `<div class="precip-bar-col" title="${title}">
+      <div class="precip-bar-track">
+        <div class="precip-bar-fill ${cls}" style="height:${heightPct}%"></div>
+      </div>
+      <div class="precip-bar-pct">${prob}%</div>
+      <div class="precip-bar-time">${timeStr}</div>
+    </div>`;
+  }
+  el.innerHTML = html || '<div class="radar-status">No data</div>';
+}
+
 function toggleSessionDetail(cardId, detId) {
   const det = document.getElementById(detId);
   if (!det) return;
@@ -846,6 +1073,7 @@ function computeWetness(h) {
 async function fetchForecast(lat,lon) {
   document.getElementById('hourlyRows').innerHTML='<div class="forecast-loading">Loading…</div>';
   document.getElementById('dailyRows').innerHTML='<div class="forecast-loading">Loading…</div>';
+  lastFetchLat = lat; lastFetchLon = lon;
   try {
     const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
       +`&hourly=temperature_2m,apparent_temperature,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m,cloud_cover,uv_index`
@@ -867,9 +1095,12 @@ async function fetchForecast(lat,lon) {
 
     // Compute and store wetness array globally
     hourlyWetness = computeWetness(data.hourly);
+    lastHourlyData = data.hourly;
 
     renderHourly(data.hourly);
     renderDaily(data.daily, data.hourly);
+    // Refresh radar precipitation chart if panel is active
+    if (activeForecastTab === 'radar') renderPrecipChart(data.hourly);
   } catch(e) {
     document.getElementById('hourlyRows').innerHTML='<div class="forecast-loading">Failed to load forecast</div>';
     document.getElementById('dailyRows').innerHTML='<div class="forecast-loading">Failed to load forecast</div>';
