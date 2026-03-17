@@ -848,7 +848,7 @@ async function fetchForecast(lat,lon) {
   document.getElementById('dailyRows').innerHTML='<div class="forecast-loading">Loading…</div>';
   try {
     const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
-      +`&hourly=temperature_2m,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m,cloud_cover,uv_index`
+      +`&hourly=temperature_2m,apparent_temperature,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m,cloud_cover,uv_index`
       +`&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,wind_speed_10m_max,wind_gusts_10m_max,uv_index_max,sunrise,sunset`
       +`&wind_speed_unit=mph&temperature_unit=fahrenheit&precipitation_unit=inch&timezone=auto&forecast_days=8`;
     const data=await (await fetch(url)).json();
@@ -1020,10 +1020,11 @@ function renderHourly(h) {
     const {color:uvColor}=uvInfo(uvRounded);
     const isNow=i===startIdx;
     const cl=courtLabel(wetness);
+    const feel=Math.round(h.apparent_temperature?.[i]??temp);
     rows.push(`<div class="fc-row">
       <div><div class="fc-time">${isNow?'Now':dt.toLocaleTimeString([],{hour:'numeric',hour12:true})}</div><div class="fc-time-sub">${isNow?'':dt.toLocaleDateString([],{weekday:'short'})}</div><div class="fc-time-sub" style="color:${cl.color}">${cl.text}</div></div>
       <div class="fc-icon">${icon}</div>
-      <div class="fc-temp">${temp}°</div>
+      <div class="fc-temp">${temp}°<div style="font-size:9px;opacity:0.55;line-height:1.2">feels ${feel}°</div></div>
       <div class="fc-wind">${wind}<span style="font-size:9px;opacity:0.7"> mph</span></div>
       <div class="fc-precip">${precip}<span style="font-size:9px;opacity:0.7">%</span></div>
       <div class="fc-tennis"><div class="tennis-dot" style="background:${tennisDotColor(ts)}">${ts}</div></div>
@@ -1220,10 +1221,11 @@ function renderDaily(d, h) {
           const cl=courtLabel(wet);
           const uvR=h.uv_index?.[j]!=null?Math.round(h.uv_index[j]):null;
           const {color:uvC}=uvInfo(uvR);
+          const feel=Math.round(h.apparent_temperature?.[j]??t);
           return `<div class="sd-row">
             <div class="fc-time">${dt.toLocaleTimeString([],{hour:'numeric',hour12:true})}</div>
             <div class="fc-icon" style="font-size:16px">${hIcon}</div>
-            <div class="fc-temp">${t}°</div>
+            <div class="fc-temp">${t}°<div style="font-size:9px;opacity:0.55;line-height:1.2">feels ${feel}°</div></div>
             <div class="fc-wind">${w}<span style="font-size:9px;opacity:0.7"> mph</span></div>
             <div class="fc-precip">${p}<span style="font-size:9px;opacity:0.7">%</span></div>
             <div><span class="court-pill" style="background:${cl.bg};color:${cl.color}">${cl.text}</span></div>
