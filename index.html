@@ -219,12 +219,27 @@
   .fc-time-sub { font-size: 10px; color: var(--muted); margin-top: 1px; }
   .fc-icon { font-size: 20px; text-align: center; line-height: 1; }
   .fc-temp { font-family: 'Bebas Neue', cursive; font-size: 22px; color: var(--warm); text-align: center; line-height: 1; }
+  .fc-feels { font-size: 9px; color: var(--warm); opacity: 0.65; text-align: center; margin-top: 1px; letter-spacing: 0.3px; }
   .fc-temp-range { display: flex; flex-direction: column; align-items: center; gap: 1px; }
   .fc-temp-hi { font-family: 'Bebas Neue', cursive; font-size: 20px; color: var(--warm); line-height: 1; }
   .fc-temp-lo { font-family: 'Bebas Neue', cursive; font-size: 16px; color: var(--muted); line-height: 1; }
   .fc-wind { font-size: 11px; color: var(--wind); text-align: center; font-weight: 500; }
   .fc-precip { font-size: 11px; color: var(--rain); text-align: center; font-weight: 500; }
   .fc-uv { font-size: 11px; text-align: center; font-weight: 500; }
+  .fc-courts { display: flex; align-items: center; justify-content: center; }
+  .court-badge {
+    font-size: 9px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase;
+    padding: 2px 6px; border-radius: 6px; font-family: 'DM Sans', sans-serif;
+  }
+  .court-badge.dry  { color: #69f0ae; background: rgba(105,240,174,0.12); border: 1px solid rgba(105,240,174,0.25); }
+  .court-badge.damp { color: #ffab40; background: rgba(255,171,64,0.12);  border: 1px solid rgba(255,171,64,0.25); }
+  .court-badge.wet  { color: #ef5350; background: rgba(239,83,80,0.12);   border: 1px solid rgba(239,83,80,0.25); }
+
+  /* Hourly table uses a wider grid to fit Courts column */
+  #fpanel-hourly .forecast-cols,
+  #fpanel-hourly .fc-row {
+    grid-template-columns: 65px 26px 52px 42px 32px 46px 34px 26px;
+  }
 
   /* Mini tennis dot */
   .fc-tennis { display: flex; align-items: center; justify-content: center; }
@@ -477,6 +492,7 @@
             <div class="fc-hdr">Temp</div>
             <div class="fc-hdr">Wind</div>
             <div class="fc-hdr">Rain</div>
+            <div class="fc-hdr">Courts</div>
             <div class="fc-hdr">🎾</div>
             <div class="fc-hdr">UV</div>
           </div>
@@ -825,7 +841,7 @@ async function fetchForecast(lat,lon) {
   document.getElementById('sessionsContent').innerHTML='<div class="forecast-loading">Loading…</div>';
   try {
     const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
-      +`&hourly=temperature_2m,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m,cloud_cover,uv_index`
+      +`&hourly=temperature_2m,apparent_temperature,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m,cloud_cover,uv_index`
       +`&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,wind_speed_10m_max,wind_gusts_10m_max,uv_index_max,sunrise,sunset`
       +`&wind_speed_unit=mph&temperature_unit=fahrenheit&precipitation_unit=inch&timezone=auto&forecast_days=8`;
     const data=await (await fetch(url)).json();
@@ -987,6 +1003,7 @@ function renderHourly(h) {
   for(let i=startIdx;i<Math.min(startIdx+48,h.time.length);i++){
     const dt=new Date(h.time[i]);
     const temp=Math.round(h.temperature_2m[i]);
+    const feels=h.apparent_temperature?.[i]!=null?Math.round(h.apparent_temperature[i]):null;
     const wind=Math.round(h.wind_speed_10m[i]);
     const gust=Math.round(h.wind_gusts_10m[i]??wind*1.4);
     const precip=h.precipitation_probability[i]??0;
@@ -997,13 +1014,16 @@ function renderHourly(h) {
     const uv=h.uv_index?.[i];
     const uvRounded=uv!=null?Math.round(uv):null;
     const {color:uvColor}=uvInfo(uvRounded);
+    const courtLabel=wetness<=0.01?'DRY':wetness<=0.05?'DAMP':'WET';
+    const courtClass=wetness<=0.01?'dry':wetness<=0.05?'damp':'wet';
     const isNow=i===startIdx;
     rows.push(`<div class="fc-row">
       <div><div class="fc-time">${isNow?'Now':dt.toLocaleTimeString([],{hour:'numeric',hour12:true})}</div><div class="fc-time-sub">${isNow?'':dt.toLocaleDateString([],{weekday:'short'})}</div></div>
       <div class="fc-icon">${icon}</div>
-      <div class="fc-temp">${temp}°</div>
+      <div><div class="fc-temp">${temp}°</div>${feels!=null&&feels!==temp?`<div class="fc-feels">FEELS ${feels}°</div>`:''}</div>
       <div class="fc-wind">${wind}<span style="font-size:9px;opacity:0.7"> mph</span></div>
       <div class="fc-precip">${precip}<span style="font-size:9px;opacity:0.7">%</span></div>
+      <div class="fc-courts"><div class="court-badge ${courtClass}">${courtLabel}</div></div>
       <div class="fc-tennis"><div class="tennis-dot" style="background:${tennisDotColor(ts)}">${ts}</div></div>
       <div class="fc-uv" style="color:${uvColor}">${uvRounded??'—'}</div>
     </div>`);
