@@ -304,6 +304,13 @@
     border-color: rgba(255,213,79,0.45);
     box-shadow: 0 0 10px rgba(255,213,79,0.12);
   }
+  .session-card { cursor: pointer; }
+  .session-card.active { border-color: rgba(255,255,255,0.28); background: var(--panel-hover); }
+  .session-detail { display: none; margin: 2px 0 8px; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); }
+  .session-detail.open { display: block; }
+  .session-detail .fc-row { padding: 6px 10px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  .session-detail .fc-row:last-child { border-bottom: none; }
+  .session-detail .forecast-cols { padding: 4px 10px 2px; }
 
   /* ── Footer ── */
   .footer { display: flex; align-items: center; justify-content: space-between; padding: 0 2px; opacity: 0; animation: fadeUp 0.5s ease 0.75s forwards; margin-bottom: 8px; }
@@ -593,6 +600,17 @@ function switchForecastTab(tab) {
     document.getElementById(`ftab-${t}`).classList.toggle('active', t===tab);
     document.getElementById(`fpanel-${t}`).classList.toggle('active', t===tab);
   });
+}
+function toggleSessionDetail(cardId, detId) {
+  const det = document.getElementById(detId);
+  if (!det) return;
+  const isOpen = det.classList.contains('open');
+  document.querySelectorAll('.session-detail.open').forEach(el => el.classList.remove('open'));
+  document.querySelectorAll('.session-card.active').forEach(el => el.classList.remove('active'));
+  if (!isOpen) {
+    det.classList.add('open');
+    document.getElementById(cardId)?.classList.add('active');
+  }
 }
 
 // ═══════════════════════════════════════
@@ -1137,7 +1155,7 @@ function renderDaily(d, h) {
           const hr = parseInt(hm[1],10);
           if (hr >= win.start && hr < win.end) idxs.push(j);
         }
-        if (idxs.length === 0) return { win, isPast, empty: true };
+        if (idxs.length === 0) return { win, isPast, empty: true, idxs: [] };
         const avgTemp = Math.round(idxs.reduce((s,j)=>s+(h.temperature_2m[j]??60),0)/idxs.length);
         const avgWind = Math.round(idxs.reduce((s,j)=>s+(h.wind_speed_10m[j]??0),0)/idxs.length);
         const avgWetness = idxs.reduce((s,j)=>s+(hourlyWetness[j]??0),0)/idxs.length;
@@ -1152,15 +1170,22 @@ function renderDaily(d, h) {
           else if (sunsetMins < 1200) { const sh=Math.floor(sunsetMins/60),sm2=sunsetMins%60; sunsetFlag=`<div class="session-sunset-note">🌅 sets ${sh>12?sh-12:(sh===0?12:sh)}:${String(sm2).padStart(2,'0')}${sh<12?'am':'pm'}</div>`; }
         }
         const isLimitedLight = win.start === 17 && sunsetMins !== null && sunsetMins < 1110;
-        return { win, isPast, empty: false, avgTemp, avgWind, sIcon, avgScore, wetBadge, sunsetFlag, isLimitedLight };
+        return { win, isPast, empty: false, avgTemp, avgWind, sIcon, avgScore, wetBadge, sunsetFlag, isLimitedLight, idxs };
       });
       let bestIdx=-1, bestSc=-1;
       sessionData.forEach((sd,wi)=>{if(!sd.empty&&!sd.isPast&&sd.avgScore>bestSc){bestSc=sd.avgScore;bestIdx=wi;}});
-      const cards = sessionData.map((sd,wi)=>{
-        if (sd.empty) return `<div class="session-card${sd.isPast?' past':''}"><div class="session-label">${sd.win.label}</div><div class="session-icon">—</div><div class="session-temp">—</div><div class="session-tennis-dot" style="background:rgba(255,255,255,0.1);color:var(--muted)">—</div></div>`;
+      const cards = [], details = [];
+      sessionData.forEach((sd,wi)=>{
+        const cardId = `scard-${d.time[i]}-${wi}`;
+        const detId  = `sdet-${d.time[i]}-${wi}`;
+        if (sd.empty) {
+          cards.push(`<div class="session-card${sd.isPast?' past':''}"><div class="session-label">${sd.win.label}</div><div class="session-icon">—</div><div class="session-temp">—</div><div class="session-tennis-dot" style="background:rgba(255,255,255,0.1);color:var(--muted)">—</div></div>`);
+          details.push(`<div id="${detId}" class="session-detail"></div>`);
+          return;
+        }
         const isBest = wi===bestIdx && bestSc>=40;
         const dotStyle = sd.isLimitedLight?`background:#555;color:rgba(232,234,240,0.5)`:`background:${tennisDotColor(sd.avgScore)}`;
-        return `<div class="session-card${sd.isPast?' past':''}${isBest?' best-session':''}">
+        cards.push(`<div class="session-card${sd.isPast?' past':''}${isBest?' best-session':''}" id="${cardId}" onclick="toggleSessionDetail('${cardId}','${detId}')">
           <div class="session-label">${sd.win.label}</div>
           <div class="session-icon">${sd.sIcon}</div>
           <div class="session-temp">${sd.avgTemp}°</div>
@@ -1168,9 +1193,34 @@ function renderDaily(d, h) {
           <div class="session-tennis-dot" style="${dotStyle}">${sd.avgScore}</div>
           ${isBest?'<div class="session-best-badge">★ Best</div>':''}
           ${sd.wetBadge}${sd.sunsetFlag}
-        </div>`;
+        </div>`);
+        // Build hourly detail rows for this session window
+        const detailRows = sd.idxs.map(j=>{
+          const dt=new Date(h.time[j]);
+          const t=Math.round(h.temperature_2m[j]), w=Math.round(h.wind_speed_10m[j]);
+          const g=Math.round(h.wind_gusts_10m[j]??w*1.4), p=h.precipitation_probability[j]??0;
+          const [,hIcon]=WMO[h.weather_code[j]]||['','🌡'];
+          const ts=tennisMini(t,w,p,g,hourlyWetness[j]??0);
+          const uvR=h.uv_index?.[j]!=null?Math.round(h.uv_index[j]):null;
+          const {color:uvC}=uvInfo(uvR);
+          return `<div class="fc-row">
+            <div><div class="fc-time">${dt.toLocaleTimeString([],{hour:'numeric',hour12:true})}</div></div>
+            <div class="fc-icon">${hIcon}</div>
+            <div class="fc-temp">${t}°</div>
+            <div class="fc-wind">${w}<span style="font-size:9px;opacity:0.7"> mph</span></div>
+            <div class="fc-precip">${p}<span style="font-size:9px;opacity:0.7">%</span></div>
+            <div class="fc-tennis"><div class="tennis-dot" style="background:${tennisDotColor(ts)}">${ts}</div></div>
+            <div class="fc-uv" style="color:${uvC}">${uvR??'—'}</div>
+          </div>`;
+        });
+        details.push(`<div id="${detId}" class="session-detail">
+          <div class="forecast-table" style="margin:0">
+            <div class="forecast-cols"><div class="fc-hdr">Time</div><div class="fc-hdr"></div><div class="fc-hdr">Temp</div><div class="fc-hdr">Wind</div><div class="fc-hdr">Rain</div><div class="fc-hdr">🎾</div><div class="fc-hdr">UV</div></div>
+            ${detailRows.join('')}
+          </div>
+        </div>`);
       });
-      sessionCardsHtml = `<div class="session-cards-row" style="padding:4px 0 10px;">${cards.join('')}</div>`;
+      sessionCardsHtml = `<div class="session-cards-row" style="padding:4px 0 6px;">${cards.join('')}</div>${details.join('')}`;
     }
 
     rows.push(`<div class="fc-row-wrap">
