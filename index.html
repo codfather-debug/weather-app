@@ -246,11 +246,15 @@
   }
 
   /* Mini tennis dot */
-  .fc-tennis { display: flex; align-items: center; justify-content: center; }
+  .fc-tennis { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
   .tennis-dot {
     width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center;
     justify-content: center; font-size: 10px; font-weight: 700; color: #0a0e1a;
     font-family: 'DM Sans', sans-serif; flex-shrink: 0;
+  }
+  .tennis-limit {
+    font-size: 7px; font-weight: 600; letter-spacing: 0.4px; color: var(--muted);
+    text-transform: uppercase; line-height: 1; text-align: center;
   }
 
   /* Daily wet court warning */
@@ -1134,6 +1138,7 @@ function renderHourly(h) {
     const [,icon]=WMO[code]||['','🌡'];
     const wetness=hourlyWetness[i]??0;
     const ts=tennisMini(temp,wind,precip,gust,wetness,feels);
+    const tlf=tennisLimitingFactor(temp,wind,gust,precip,wetness,feels);
     const uv=h.uv_index?.[i];
     const uvRounded=uv!=null?Math.round(uv):null;
     const {color:uvColor}=uvInfo(uvRounded);
@@ -1147,7 +1152,7 @@ function renderHourly(h) {
       <div class="fc-wind">${wind}<span style="font-size:9px;opacity:0.7"> mph</span></div>
       <div class="fc-precip">${precip}<span style="font-size:9px;opacity:0.7">%</span></div>
       <div class="fc-courts"><div class="court-badge ${courtClass}">${courtLabel}</div></div>
-      <div class="fc-tennis"><div class="tennis-dot" style="background:${tennisDotColor(ts)}">${ts}</div></div>
+      <div class="fc-tennis"><div class="tennis-dot" style="background:${tennisDotColor(ts)}">${ts}</div>${tlf?`<div class="tennis-limit">${tlf}</div>`:''}</div>
       <div class="fc-uv" style="color:${uvColor}">${uvRounded??'—'}</div>
     </div>`);
   }
@@ -1573,6 +1578,7 @@ function openSessionDetail(dayStr, winIdx, dayIdx) {
     const courtClass = wet > 0.05 ? 'wet' : wet > 0.01 ? 'damp' : 'dry';
     const courtLabel = wet > 0.05 ? 'WET' : wet > 0.01 ? 'DAMP' : 'DRY';
 
+    const tlf = tennisLimitingFactor(temp, wind, gust, precipProb, wet, feel);
     rows.push(`<div class="fc-row" style="grid-template-columns:65px 26px 52px 42px 32px 46px 34px 26px">
       <div><div class="fc-time">${timeLabel}</div>${feel!=null?`<div class="fc-feels">feels ${feel}°</div>`:''}</div>
       <div class="fc-icon">${icon}</div>
@@ -1580,7 +1586,7 @@ function openSessionDetail(dayStr, winIdx, dayIdx) {
       <div class="fc-wind">${wind}<span style="font-size:9px;opacity:0.7"> mph</span></div>
       <div class="fc-precip">${precipProb}<span style="font-size:9px;opacity:0.7">%</span></div>
       <div class="fc-courts"><div class="court-badge ${courtClass}">${courtLabel}</div></div>
-      <div class="fc-tennis"><div class="tennis-dot" style="background:${tennisDotColor(ts)}">${ts}</div></div>
+      <div class="fc-tennis"><div class="tennis-dot" style="background:${tennisDotColor(ts)}">${ts}</div>${tlf?`<div class="tennis-limit">${tlf}</div>`:''}</div>
       <div class="fc-uv" style="color:${uvColor}">${uvVal??'—'}</div>
     </div>`);
   }
@@ -1629,12 +1635,12 @@ function wetnessMultiplier(w) {
   return 0.0;                  // unplayable
 }
 
-function computeTennisWeatherScore(T, W, G, R) {
+function computeTennisWeatherScore(T, W, G, R, actualTemp = null) {
   const temp_score = Math.exp(-Math.pow(T - 72, 2) / (2 * Math.pow(15, 2)));
-  const wind_score = 1 / (1 + Math.exp((W - 15) / 3));   // inflection at 15mph (was 10)
-  const gust_score = 1 / (1 + Math.exp((G - W - 12) / 3)); // excess inflection at 12mph above avg (was 6)
-  // Above 50°F temperature gets higher weight; below 50 wind/gust dominate more
-  const [tw, ww, gw] = T > 50 ? [0.45, 0.30, 0.20] : [0.25, 0.35, 0.25];
+  const wind_score = 1 / (1 + Math.exp((W - 15) / 3));
+  const gust_score = 1 / (1 + Math.exp((G - W - 12) / 3));
+  // Use actual temp (if provided) for weight decision so a 65°F day with low feels-like still gets temp-biased weights
+  const [tw, ww, gw] = (actualTemp ?? T) > 50 ? [0.45, 0.30, 0.20] : [0.25, 0.35, 0.25];
   const base = (tw * temp_score + ww * wind_score + gw * gust_score) / (tw + ww + gw);
   const score = Math.min(100, Math.max(0, Math.round(base * rainMultiplier(R) * 100)));
   let category;
@@ -1660,10 +1666,10 @@ function tennisMini(temp, wind, precipProb, gust, wetness = 0, feels = null) {
   const R = precipProb / 100;
   const G = gust ?? wind * 1.4;
   const T = feels ?? temp;
-  const { score } = computeTennisWeatherScore(T, wind, G, R);
+  const { score } = computeTennisWeatherScore(T, wind, G, R, temp);
   let s = Math.max(0, Math.round(score * wetnessMultiplier(wetness)));
-  // Temp > 60 with feels > 52 and no rain/wet courts → floor at Playable
-  if (temp > 60 && T > 52 && precipProb === 0 && wetness <= 0.01) s = Math.max(s, 60);
+  // Temp > 60 with feels > 52 and low rain/dry courts → floor at Playable
+  if (temp > 60 && T > 52 && precipProb < 10 && wetness <= 0.01) s = Math.max(s, 60);
   return s;
 }
 
@@ -1680,15 +1686,25 @@ function tennisVerdict(s) {
   if(s>=40)return{text:'Poor conditions',color:'#ff7043'};
   return{text:'Bad conditions',color:'#ef5350'};
 }
+function tennisLimitingFactor(temp, wind, gust, precipProb, wetness, feels) {
+  const T = feels ?? temp;
+  if (wetness > 0.05) return 'WET';
+  if (precipProb >= 30) return 'RAIN';
+  if (T < 45) return 'COLD';
+  if (wind > 20) return 'WINDY';
+  if ((gust - wind) > 15) return 'GUSTY';
+  if (T < 55) return 'COOL';
+  return '';
+}
 function factorColor(s){if(s>=80)return'#69f0ae';if(s>=60)return'#b2ff59';if(s>=40)return'#ffab40';return'#ef5350';}
 function renderTennis({temp, feel, windSpeedMph, windGustMph, rainProb}) {
   lastTennisRenderParams = {temp, feel, windSpeedMph, windGustMph, rainProb};
   const T = feel ?? temp;
   const G = windGustMph ?? windSpeedMph * 1.4;
   const R = rainProb ?? 0;
-  const {score: rawScore} = computeTennisWeatherScore(T, windSpeedMph, G, R);
+  const {score: rawScore} = computeTennisWeatherScore(T, windSpeedMph, G, R, temp);
   let score = Math.max(0, Math.round(rawScore * wetnessMultiplier(currentHourWetness)));
-  if (temp > 60 && T > 52 && R === 0 && currentHourWetness <= 0.01) score = Math.max(score, 60);
+  if (temp > 60 && T > 52 && R < 0.10 && currentHourWetness <= 0.01) score = Math.max(score, 60);
   const {text, color} = tennisVerdict(score);
   // Feature 4: store current tennis score
   currentTennisScore = score;
