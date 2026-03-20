@@ -157,13 +157,7 @@
   .tennis-verdict { font-size: 11px; font-weight: 500; margin-top: 1px; transition: color 0.6s ease; }
   .tennis-bar-track { height: 5px; background: rgba(255,255,255,0.07); border-radius: 3px; overflow: hidden; margin-bottom: 12px; }
   .tennis-bar-fill { height: 100%; border-radius: 3px; transition: width 1.2s cubic-bezier(0.4,0,0.2,1), background 0.6s ease; }
-  .tennis-factors { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .tennis-factor { display: flex; flex-direction: column; gap: 4px; }
-  .factor-row { display: flex; align-items: center; justify-content: space-between; }
-  .factor-name { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
-  .factor-score { font-size: 10px; font-weight: 500; }
-  .factor-track { height: 2px; background: rgba(255,255,255,0.07); border-radius: 2px; overflow: hidden; }
-  .factor-fill { height: 100%; border-radius: 2px; transition: width 1s ease 0.3s; }
+  .tennis-grade-scale { font-size: 12px; color: var(--muted); text-align: center; margin-top: 6px; font-style: italic; }
 
   /* ── Forecast section ── */
   .forecast-section { margin-bottom: 12px; opacity: 0; animation: fadeUp 0.5s ease 0.65s forwards; }
@@ -456,24 +450,7 @@
         </div>
       </div>
       <div class="tennis-bar-track"><div class="tennis-bar-fill" id="tennisBar" style="width:0%"></div></div>
-      <div class="tennis-factors">
-        <div class="tennis-factor">
-          <div class="factor-row"><span class="factor-name">Temp</span><span class="factor-score" id="fTempScore">—</span></div>
-          <div class="factor-track"><div class="factor-fill" id="fTempBar" style="width:0%"></div></div>
-        </div>
-        <div class="tennis-factor">
-          <div class="factor-row"><span class="factor-name">Wind</span><span class="factor-score" id="fWindScore">—</span></div>
-          <div class="factor-track"><div class="factor-fill" id="fWindBar" style="width:0%"></div></div>
-        </div>
-        <div class="tennis-factor">
-          <div class="factor-row"><span class="factor-name">Precip</span><span class="factor-score" id="fRainScore">—</span></div>
-          <div class="factor-track"><div class="factor-fill" id="fRainBar" style="width:0%"></div></div>
-        </div>
-        <div class="tennis-factor">
-          <div class="factor-row"><span class="factor-name">Gusts</span><span class="factor-score" id="fGustScore">—</span></div>
-          <div class="factor-track"><div class="factor-fill" id="fGustBar" style="width:0%"></div></div>
-        </div>
-      </div>
+      <div class="tennis-grade-scale" id="tennisGradeScale">— vs Perfect conditions</div>
     </div>
 
     <!-- Forecast tabs -->
@@ -1433,7 +1410,6 @@ function renderTennis({temp, feel, windSpeedMph, windGustMph, rainProb}) {
   const R = rainProb ?? 0;
   const {score: rawScore} = computeTennisWeatherScore(T, windSpeedMph, G, R);
   const score = Math.max(0, Math.round(rawScore * wetnessMultiplier(currentHourWetness)));
-  const comps = twsComponents(T, windSpeedMph, G, R);
   const {text, color} = tennisVerdict(score);
   // Feature 4: store current tennis score
   currentTennisScore = score;
@@ -1443,11 +1419,9 @@ function renderTennis({temp, feel, windSpeedMph, windGustMph, rainProb}) {
   document.getElementById('tennisVerdict').style.color = color;
   const bar = document.getElementById('tennisBar');
   bar.style.width = score + '%'; bar.style.background = color; bar.style.boxShadow = `0 0 8px ${color}55`;
-  [['fTempScore','fTempBar',comps.temp],['fWindScore','fWindBar',comps.wind],['fRainScore','fRainBar',comps.rain],['fGustScore','fGustBar',comps.gust]].forEach(([se,be,s])=>{
-    const c = factorColor(s);
-    document.getElementById(se).textContent = s + '%'; document.getElementById(se).style.color = c;
-    document.getElementById(be).style.width = s + '%'; document.getElementById(be).style.background = c;
-  });
+  // Update grading scale
+  document.getElementById('tennisGradeScale').textContent = `${score}% vs Perfect conditions`;
+  document.getElementById('tennisGradeScale').style.color = color;
 }
 
 // ═══════════════════════════════════════
