@@ -436,6 +436,27 @@
   </div>
 </div>
 
+<!-- Session detail modal -->
+<div class="modal-backdrop" id="sessionModalBackdrop" onclick="closeSessionModal(event)">
+  <div class="modal">
+    <div class="modal-title" id="sessionModalTitle">—</div>
+    <div class="forecast-table" style="margin: 0 -4px;">
+      <div class="forecast-cols" id="sessionModalCols">
+        <div class="fc-hdr">Time</div>
+        <div class="fc-hdr"></div>
+        <div class="fc-hdr">Temp</div>
+        <div class="fc-hdr">Wind</div>
+        <div class="fc-hdr">Rain</div>
+        <div class="fc-hdr">Courts</div>
+        <div class="fc-hdr">🎾</div>
+        <div class="fc-hdr">UV</div>
+      </div>
+      <div id="sessionModalRows"></div>
+    </div>
+    <button class="modal-cancel" onclick="document.getElementById('sessionModalBackdrop').classList.remove('open')">Close</button>
+  </div>
+</div>
+
 <div class="page">
 
   <!-- Location tabs -->
@@ -1501,7 +1522,7 @@ function toggleDayExpand(idx, dayStr) {
     const bestLabel = isBest ? `<div class="session-best-label">★ BEST</div>` : '';
     const cardClass = `session-card${isPast?' past':''}${isBest?' best-session':''}`;
 
-    return `<div class="${cardClass}">
+    return `<div class="${cardClass}" onclick="openSessionDetail('${dayStr}',${wi})" style="cursor:pointer">
       <div class="session-label">${win.label}</div>
       <div class="session-icon">${icon}</div>
       <div class="session-temp">${avgTemp}°</div>
@@ -1516,6 +1537,67 @@ function toggleDayExpand(idx, dayStr) {
   expand.innerHTML = `<div class="session-cards-row">${sessionCards.join('')}</div>`;
   expand.classList.add('open');
   wrap.classList.add('expanded');
+}
+
+// ═══════════════════════════════════════
+// SESSION DETAIL MODAL
+// ═══════════════════════════════════════
+function openSessionDetail(dayStr, winIdx) {
+  const win = SESSION_WINDOWS[winIdx];
+  const h = lastHourlyData;
+  if (!h) return;
+
+  const dt = new Date(dayStr + 'T12:00:00');
+  const today = new Date(); today.setHours(0,0,0,0);
+  const isToday = dt.setHours(0,0,0,0) === today.getTime();
+  const dayLabel = isToday ? 'Today' : new Date(dayStr + 'T12:00:00').toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+  document.getElementById('sessionModalTitle').textContent = `${dayLabel} · ${win.label}`;
+
+  // Apply hourly grid to header
+  const cols = document.getElementById('sessionModalCols');
+  cols.style.gridTemplateColumns = '65px 26px 52px 42px 32px 46px 34px 26px';
+
+  const rows = [];
+  for (let j = 0; j < h.time.length; j++) {
+    const ht = h.time[j];
+    if (!ht.startsWith(dayStr)) continue;
+    const hr = parseInt((ht.match(/T(\d{2}):/)||[])[1]??'0', 10);
+    if (hr < win.start || hr >= win.end) continue;
+
+    const temp = Math.round(h.temperature_2m[j]);
+    const feel = h.apparent_temperature?.[j] != null ? Math.round(h.apparent_temperature[j]) : null;
+    const wind = Math.round(h.wind_speed_10m[j]);
+    const gust = Math.round(h.wind_gusts_10m[j] ?? wind * 1.4);
+    const precipProb = h.precipitation_probability[j] ?? 0;
+    const code = h.weather_code[j];
+    const [,icon] = WMO[code] || ['','🌡'];
+    const wet = hourlyWetness[j] ?? 0;
+    const ts = tennisMini(temp, wind, precipProb, gust, wet, feel);
+    const uvVal = h.uv_index?.[j] != null ? Math.round(h.uv_index[j]) : null;
+    const {color: uvColor} = uvInfo(uvVal);
+    const timeLabel = new Date(ht).toLocaleTimeString([], {hour: 'numeric'});
+    const courtClass = wet > 0.05 ? 'wet' : wet > 0.01 ? 'damp' : 'dry';
+    const courtLabel = wet > 0.05 ? 'WET' : wet > 0.01 ? 'DAMP' : 'DRY';
+
+    rows.push(`<div class="fc-row" style="grid-template-columns:65px 26px 52px 42px 32px 46px 34px 26px">
+      <div><div class="fc-time">${timeLabel}</div>${feel!=null?`<div class="fc-feels">feels ${feel}°</div>`:''}</div>
+      <div class="fc-icon">${icon}</div>
+      <div class="fc-temp">${temp}°</div>
+      <div class="fc-wind">${wind}<span style="font-size:9px;opacity:0.7"> mph</span></div>
+      <div class="fc-precip">${precipProb}<span style="font-size:9px;opacity:0.7">%</span></div>
+      <div class="fc-courts"><div class="court-badge ${courtClass}">${courtLabel}</div></div>
+      <div class="fc-tennis"><div class="tennis-dot" style="background:${tennisDotColor(ts)}">${ts}</div></div>
+      <div class="fc-uv" style="color:${uvColor}">${uvVal??'—'}</div>
+    </div>`);
+  }
+
+  document.getElementById('sessionModalRows').innerHTML = rows.join('') || '<div class="forecast-loading">No data available</div>';
+  document.getElementById('sessionModalBackdrop').classList.add('open');
+}
+
+function closeSessionModal(e) {
+  if (e && e.target.id !== 'sessionModalBackdrop') return;
+  document.getElementById('sessionModalBackdrop').classList.remove('open');
 }
 
 // ═══════════════════════════════════════
@@ -1588,7 +1670,10 @@ function tennisMini(temp, wind, precipProb, gust, wetness = 0, feels = null) {
   const G = gust ?? wind * 1.4;
   const T = feels ?? temp;
   const { score } = computeTennisWeatherScore(T, wind, G, R);
-  return Math.max(0, Math.round(score * wetnessMultiplier(wetness)));
+  let s = Math.max(0, Math.round(score * wetnessMultiplier(wetness)));
+  // Temp > 60 with feels > 52 and no rain/wet courts → floor at Playable
+  if (temp > 60 && T > 52 && precipProb === 0 && wetness <= 0.01) s = Math.max(s, 60);
+  return s;
 }
 
 function tennisDotColor(s) {
@@ -1611,7 +1696,8 @@ function renderTennis({temp, feel, windSpeedMph, windGustMph, rainProb}) {
   const G = windGustMph ?? windSpeedMph * 1.4;
   const R = rainProb ?? 0;
   const {score: rawScore} = computeTennisWeatherScore(T, windSpeedMph, G, R);
-  const score = Math.max(0, Math.round(rawScore * wetnessMultiplier(currentHourWetness)));
+  let score = Math.max(0, Math.round(rawScore * wetnessMultiplier(currentHourWetness)));
+  if (temp > 60 && T > 52 && R === 0 && currentHourWetness <= 0.01) score = Math.max(score, 60);
   const {text, color} = tennisVerdict(score);
   // Feature 4: store current tennis score
   currentTennisScore = score;
