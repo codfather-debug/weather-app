@@ -1348,7 +1348,7 @@ function renderWeather({temp,feel,windSpeedMph,windGustMph,windDeg,rain,rainProb
   document.getElementById('timeLine').textContent=now.toLocaleDateString([],{weekday:'long',month:'long',day:'numeric'});
   // Feature 4: store conditions summary
   currentConditionsSummary = { temp, windSpeedMph, rainProb };
-  renderTennis({temp,windSpeedMph,windGustMph,rainProb});
+  // Don't render tennis here - let renderHourly handle it with forecast data to avoid race condition
 }
 function setSource(name,sid) {
   document.getElementById('sourceBadge').className='source-badge '+(name==='NWS'?'nws':'openmeteo');
