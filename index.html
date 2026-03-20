@@ -10,6 +10,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Tennis Weather">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
   :root {
     --bg: #0a0e1a;
@@ -262,12 +264,23 @@
     gap: 4px;
   }
 
-  /* Daily row wrapper for wet warning */
+  /* Daily row wrapper */
   .fc-row-wrap {
     border-bottom: 1px solid rgba(255,255,255,0.04);
+    position: relative;
   }
   .fc-row-wrap:last-child { border-bottom: none; }
   .fc-row-wrap .fc-row { border-bottom: none; }
+  #fpanel-daily .fc-row-wrap { cursor: pointer; }
+  #fpanel-daily .fc-row-wrap:hover .fc-row { background: var(--panel-hover); }
+  .day-chevron {
+    position: absolute; right: 10px; top: 14px;
+    font-size: 16px; color: var(--muted);
+    transition: transform 0.2s, color 0.2s; pointer-events: none;
+  }
+  .fc-row-wrap.expanded .day-chevron { transform: rotate(90deg); color: var(--accent); }
+  .day-sessions-expand { display: none; padding: 2px 10px 12px; }
+  .day-sessions-expand.open { display: block; }
 
   .forecast-loading { text-align: center; padding: 24px; font-size: 12px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
   .forecast-note { font-size: 10px; color: var(--muted); text-align: center; padding: 8px 0 2px; font-style: italic; }
@@ -301,6 +314,16 @@
     border: 1px solid rgba(100,181,246,0.25); border-radius: 8px; padding: 2px 6px;
     white-space: nowrap;
   }
+  .session-dry-badge {
+    font-size: 9px; color: #69f0ae; background: rgba(105,240,174,0.1);
+    border: 1px solid rgba(105,240,174,0.2); border-radius: 8px; padding: 2px 6px;
+  }
+  .session-best-label {
+    font-size: 9px; color: var(--accent); letter-spacing: 0.5px; font-weight: 600;
+  }
+  .session-card.best-session {
+    background: rgba(79,195,247,0.08); border-color: rgba(79,195,247,0.35);
+  }
   .wet-warning {
     font-size: 10px; color: #ffab40; padding: 2px 0 4px; font-style: italic;
   }
@@ -313,6 +336,54 @@
   .session-sunset-warning {
     font-size: 9px; color: #ff7043; text-align: center; line-height: 1.3;
   }
+
+  /* ── Radar panel ── */
+  #radarMap { width: 100%; height: 280px; border-radius: 14px 14px 0 0; overflow: hidden; background: #0d1117; }
+  .radar-controls {
+    display: flex; align-items: center; gap: 10px;
+    background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+    border-top: none; border-bottom: none; padding: 10px 14px;
+  }
+  .radar-play-btn {
+    flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%;
+    background: var(--accent); border: none; color: #0a0e1a;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .radar-play-btn:hover { opacity: 0.85; }
+  .radar-time-wrap { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+  .radar-time-label { font-size: 11px; color: var(--text); font-weight: 500; }
+  .radar-scrubber {
+    width: 100%; height: 4px; -webkit-appearance: none; appearance: none;
+    background: rgba(255,255,255,0.15); border-radius: 2px; outline: none; cursor: pointer;
+  }
+  .radar-scrubber::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+    background: var(--accent); cursor: pointer;
+  }
+  .radar-scale { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+  .radar-scale-bar {
+    width: 48px; height: 6px; border-radius: 3px;
+    background: linear-gradient(to right, #64b5f6, #4caf50, #ffeb3b, #ff9800, #f44336);
+  }
+  .precip-outlook-section {
+    background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+    border-top: none; border-radius: 0 0 14px 14px; padding: 12px 14px 10px;
+  }
+  .precip-outlook-title {
+    font-size: 9px; text-transform: uppercase; letter-spacing: 1.5px;
+    color: var(--muted); font-weight: 500; margin-bottom: 10px;
+  }
+  .precip-outlook-bars { display: flex; gap: 4px; align-items: flex-end; }
+  .precip-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .precip-bar-track { width: 100%; height: 40px; background: rgba(255,255,255,0.06); border-radius: 3px; position: relative; overflow: hidden; }
+  .precip-bar-fill { position: absolute; bottom: 0; left: 0; right: 0; background: var(--rain); border-radius: 3px; transition: height 0.3s; }
+  .precip-bar-pct { font-size: 9px; color: var(--muted); }
+  .precip-bar-time { font-size: 9px; color: var(--muted); }
+
+  /* Leaflet overrides */
+  .leaflet-container { background: #0d1117 !important; }
+  .leaflet-tile-pane { filter: brightness(0.85) saturate(0.7); }
 
   /* ── Footer ── */
   .footer { display: flex; align-items: center; justify-content: space-between; padding: 0 2px; opacity: 0; animation: fadeUp 0.5s ease 0.75s forwards; margin-bottom: 8px; }
@@ -456,7 +527,7 @@
       <div class="forecast-tab-bar">
         <div class="forecast-tab active" id="ftab-hourly" onclick="switchForecastTab('hourly')">Hourly</div>
         <div class="forecast-tab" id="ftab-daily" onclick="switchForecastTab('daily')">7-Day</div>
-        <div class="forecast-tab" id="ftab-sessions" onclick="switchForecastTab('sessions')">Sessions</div>
+        <div class="forecast-tab" id="ftab-radar" onclick="switchForecastTab('radar')">Radar</div>
       </div>
 
       <!-- Hourly panel -->
@@ -495,11 +566,26 @@
         <div class="forecast-note">7-day outlook · Open-Meteo</div>
       </div>
 
-      <!-- Sessions panel -->
-      <div class="forecast-panel" id="fpanel-sessions">
-        <div id="sessionsContent"><div class="forecast-loading">Loading sessions…</div></div>
-        <div class="sessions-note">Today + 3 days · Morning / Afternoon / Evening</div>
+      <!-- Radar panel -->
+      <div class="forecast-panel" id="fpanel-radar">
+        <div id="radarMap"></div>
+        <div class="radar-controls">
+          <button class="radar-play-btn" id="radarPlayBtn" onclick="toggleRadarPlay()">
+            <svg id="radarPlayIcon" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+          </button>
+          <div class="radar-time-wrap">
+            <span class="radar-time-label" id="radarTimeLabel">—</span>
+            <input class="radar-scrubber" id="radarScrubber" type="range" min="0" value="0" oninput="onRadarScrub(this.value)">
+          </div>
+          <div class="radar-scale"><span style="font-size:9px;color:var(--muted)">Light</span><div class="radar-scale-bar"></div><span style="font-size:9px;color:var(--muted)">Heavy</span></div>
+        </div>
+        <div class="precip-outlook-section">
+          <div class="precip-outlook-title">4-HOUR PRECIPITATION OUTLOOK</div>
+          <div id="precipOutlook" class="precip-outlook-bars"></div>
+        </div>
+        <div class="forecast-note">Radar · RainViewer &nbsp;|&nbsp; Forecast · Open-Meteo</div>
       </div>
+
     </div>
 
     <div class="footer">
@@ -515,6 +601,12 @@
             <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
           </svg>
           Refresh
+        </button>
+        <button class="refresh-btn" id="clearCacheBtn" onclick="onClearCacheClick()">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
+          </svg>
+          Clear Cache
         </button>
       </div>
       <div class="updated-time" id="updatedTime">—</div>
@@ -537,6 +629,7 @@ let activeForecastTab = 'hourly';
 
 // Module-level wetness array populated after forecast fetch
 let hourlyWetness = [];
+let lastHourlyData = null;
 let currentHourWetness = 0;
 let lastTennisRenderParams = null;
 
@@ -582,10 +675,11 @@ function deleteLoc(id) { savedLocs=savedLocs.filter(l=>l.id!==id); persistLocs()
 // ═══════════════════════════════════════
 function switchForecastTab(tab) {
   activeForecastTab = tab;
-  ['hourly','daily','sessions'].forEach(t => {
+  ['hourly','daily','radar'].forEach(t => {
     document.getElementById(`ftab-${t}`).classList.toggle('active', t===tab);
     document.getElementById(`fpanel-${t}`).classList.toggle('active', t===tab);
   });
+  if (tab === 'radar') initRadar();
 }
 
 // ═══════════════════════════════════════
@@ -796,7 +890,6 @@ function computeWetness(h) {
 async function fetchForecast(lat,lon) {
   document.getElementById('hourlyRows').innerHTML='<div class="forecast-loading">Loading…</div>';
   document.getElementById('dailyRows').innerHTML='<div class="forecast-loading">Loading…</div>';
-  document.getElementById('sessionsContent').innerHTML='<div class="forecast-loading">Loading…</div>';
   try {
     const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
       +`&hourly=temperature_2m,apparent_temperature,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m,cloud_cover,uv_index`
@@ -818,14 +911,13 @@ async function fetchForecast(lat,lon) {
 
     // Compute and store wetness array globally
     hourlyWetness = computeWetness(data.hourly);
+    lastHourlyData = data.hourly;
 
     renderHourly(data.hourly);
     renderDaily(data.daily, data.hourly);
-    renderSessions(data.hourly);
   } catch(e) {
     document.getElementById('hourlyRows').innerHTML='<div class="forecast-loading">Failed to load forecast</div>';
     document.getElementById('dailyRows').innerHTML='<div class="forecast-loading">Failed to load forecast</div>';
-    document.getElementById('sessionsContent').innerHTML='<div class="forecast-loading">Failed to load forecast</div>';
   }
 }
 
@@ -1167,7 +1259,7 @@ function renderDaily(d, h) {
       }
     }
 
-    rows.push(`<div class="fc-row-wrap">
+    rows.push(`<div class="fc-row-wrap" id="day-wrap-${i}" onclick="toggleDayExpand(${i},'${d.time[i]}')">
       <div class="fc-row${bestDayClass}">
         <div><div class="fc-time" style="font-size:${isToday?'13px':'11px'}">${label}${bestBadge}</div></div>
         <div class="fc-icon">${icon}</div>
@@ -1177,7 +1269,9 @@ function renderDaily(d, h) {
         <div class="fc-tennis"><div class="tennis-dot" style="background:${tennisDotColor(ts)}">${ts}</div></div>
         <div class="fc-uv" style="color:${uvColor}">${uvMaxRounded??'—'}</div>
       </div>
+      <span class="day-chevron">›</span>
       ${wetWarningHtml ? `<div style="padding: 0 14px 8px;">${wetWarningHtml}</div>` : ''}
+      <div class="day-sessions-expand" id="day-expand-${i}"></div>
     </div>`);
   }
   document.getElementById('dailyRows').innerHTML=rows.join('');
@@ -1316,6 +1410,112 @@ function renderSessions(h) {
 
   document.getElementById('sessionsContent').innerHTML =
     `<div class="sessions-container">${blocks.join('')}</div>`;
+}
+
+// ═══════════════════════════════════════
+// DAILY ROW EXPAND (inline sessions)
+// ═══════════════════════════════════════
+function toggleDayExpand(idx, dayStr) {
+  const wrap = document.getElementById(`day-wrap-${idx}`);
+  const expand = document.getElementById(`day-expand-${idx}`);
+  if (wrap.classList.contains('expanded')) {
+    wrap.classList.remove('expanded');
+    expand.classList.remove('open');
+    return;
+  }
+
+  const h = lastHourlyData;
+  if (!h) return;
+
+  const sunEntry = dailySunTimes.find(s => s.date === dayStr);
+  let sunsetMinutes = null;
+  if (sunEntry && sunEntry.sunset) {
+    const m = sunEntry.sunset.match(/T(\d{2}):(\d{2})/);
+    if (m) sunsetMinutes = parseInt(m[1],10)*60 + parseInt(m[2],10);
+  }
+
+  const now = new Date();
+  const isToday = dayStr === now.toISOString().slice(0,10);
+  const nowHour = now.getHours();
+
+  // Compute all session scores first to find best
+  const sessionScores = SESSION_WINDOWS.map(win => {
+    const indices = [];
+    for (let j = 0; j < h.time.length; j++) {
+      const ht = h.time[j];
+      if (!ht.startsWith(dayStr)) continue;
+      const hr = parseInt((ht.match(/T(\d{2}):/)||[])[1]??'0', 10);
+      if (hr >= win.start && hr < win.end) indices.push(j);
+    }
+    if (!indices.length) return -1;
+    const scores = indices.map(j => {
+      const t = Math.round(h.temperature_2m[j]);
+      const feels = h.apparent_temperature?.[j] != null ? Math.round(h.apparent_temperature[j]) : null;
+      const w = Math.round(h.wind_speed_10m[j]);
+      const g = Math.round(h.wind_gusts_10m[j] ?? w * 1.4);
+      const p = h.precipitation_probability[j] ?? 0;
+      const wet = hourlyWetness[j] ?? 0;
+      return tennisMini(t, w, p, g, wet, feels);
+    });
+    return Math.round(scores.reduce((a,b)=>a+b,0)/scores.length);
+  });
+  const bestWinScore = Math.max(...sessionScores);
+  const bestWinIdx = sessionScores.indexOf(bestWinScore);
+
+  const sessionCards = SESSION_WINDOWS.map((win, wi) => {
+    const isPast = isToday && win.end <= nowHour;
+    const indices = [];
+    for (let j = 0; j < h.time.length; j++) {
+      const ht = h.time[j];
+      if (!ht.startsWith(dayStr)) continue;
+      const hr = parseInt((ht.match(/T(\d{2}):/)||[])[1]??'0', 10);
+      if (hr >= win.start && hr < win.end) indices.push(j);
+    }
+    if (!indices.length) {
+      return `<div class="session-card${isPast?' past':''}"><div class="session-label">${win.label}</div><div class="session-icon">—</div><div class="session-temp">—</div><div class="session-tennis-dot" style="background:rgba(255,255,255,0.1);color:var(--muted)">—</div></div>`;
+    }
+
+    const avgTemp = Math.round(indices.reduce((s,j)=>s+(h.temperature_2m[j]??60),0)/indices.length);
+    const avgWind = Math.round(indices.reduce((s,j)=>s+(h.wind_speed_10m[j]??0),0)/indices.length);
+    const avgWetness = indices.reduce((s,j)=>s+(hourlyWetness[j]??0),0)/indices.length;
+    const codeCounts = {};
+    indices.forEach(j => { const c=h.weather_code[j]??0; codeCounts[c]=(codeCounts[c]||0)+1; });
+    const domCode = parseInt(Object.entries(codeCounts).sort((a,b)=>b[1]-a[1])[0][0],10);
+    const [,icon] = WMO[domCode] || ['','🌡'];
+    const avgScore = sessionScores[wi];
+    const isBest = (wi === bestWinIdx) && bestWinScore > 0;
+
+    let sunsetFlagHtml = '';
+    if (win.start === 17 && sunsetMinutes !== null) {
+      const sh = Math.floor(sunsetMinutes/60), sm = sunsetMinutes%60;
+      const sStr = `${sh>12?sh-12:(sh===0?12:sh)}:${String(sm).padStart(2,'0')}${sh<12?'am':'pm'}`;
+      if (sunsetMinutes < 1110) sunsetFlagHtml = `<div class="session-sunset-warning">⚠️ limited light</div>`;
+      else if (sunsetMinutes < 1200) sunsetFlagHtml = `<div class="session-sunset-note">🌅 sets ${sStr}</div>`;
+    }
+
+    const isLimitedLight = win.start === 17 && sunsetMinutes !== null && sunsetMinutes < 1110;
+    const dotStyle = isLimitedLight ? `background:#555;color:rgba(232,234,240,0.5)` : `background:${tennisDotColor(avgScore)}`;
+    const wetBadge = avgWetness > 0.02
+      ? `<div class="session-wet-badge">💧 wet</div>`
+      : `<div class="session-dry-badge">DRY</div>`;
+    const bestLabel = isBest ? `<div class="session-best-label">★ BEST</div>` : '';
+    const cardClass = `session-card${isPast?' past':''}${isBest?' best-session':''}`;
+
+    return `<div class="${cardClass}">
+      <div class="session-label">${win.label}</div>
+      <div class="session-icon">${icon}</div>
+      <div class="session-temp">${avgTemp}°</div>
+      <div class="session-wind">${avgWind} mph</div>
+      <div class="session-tennis-dot" style="${dotStyle}">${avgScore}</div>
+      ${bestLabel}
+      ${wetBadge}
+      ${sunsetFlagHtml}
+    </div>`;
+  });
+
+  expand.innerHTML = `<div class="session-cards-row">${sessionCards.join('')}</div>`;
+  expand.classList.add('open');
+  wrap.classList.add('expanded');
 }
 
 // ═══════════════════════════════════════
@@ -1495,6 +1695,119 @@ document.addEventListener('visibilitychange',()=>{
 });
 
 init();
+
+// ═══════════════════════════════════════
+// CLEAR CACHE
+// ═══════════════════════════════════════
+async function onClearCacheClick() {
+  const btn = document.getElementById('clearCacheBtn');
+  btn.classList.add('spinning');
+  if ('caches' in window) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map(k => caches.delete(k)));
+  }
+  window.location.replace(window.location.pathname + '?nocache=' + Date.now());
+}
+
+// ═══════════════════════════════════════
+// RADAR (RainViewer + Leaflet)
+// ═══════════════════════════════════════
+let radarMap = null, radarLayer = null, radarFrames = [], radarFrameIdx = 0;
+let radarHost = '', radarPlaying = false, radarTimer = null;
+
+async function initRadar() {
+  if (radarMap) { radarMap.invalidateSize(); renderPrecipOutlook(); return; }
+
+  const lat = activeLocId === GPS_ID ? gpsLat : savedLocs.find(l=>l.id===activeLocId)?.lat ?? 41.85;
+  const lon = activeLocId === GPS_ID ? gpsLon : savedLocs.find(l=>l.id===activeLocId)?.lon ?? -87.65;
+
+  radarMap = L.map('radarMap', { zoomControl: true, attributionControl: false, dragging: true, scrollWheelZoom: false }).setView([lat||41.85, lon||-87.65], 7);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', { maxZoom: 18 }).addTo(radarMap);
+  L.circleMarker([lat||41.85, lon||-87.65], { radius: 6, color: var_accent(), fillColor: var_accent(), fillOpacity: 1, weight: 2 }).addTo(radarMap);
+
+  await loadRadarFrames();
+  renderPrecipOutlook();
+}
+
+function var_accent() { return '#4fc3f7'; }
+
+async function loadRadarFrames() {
+  try {
+    const data = await (await fetch('https://api.rainviewer.com/public/weather-maps.json')).json();
+    radarHost = data.host;
+    radarFrames = [...(data.radar.past || []), ...(data.radar.nowcast || [])];
+    const scrubber = document.getElementById('radarScrubber');
+    scrubber.max = radarFrames.length - 1;
+    radarFrameIdx = radarFrames.length - 1;
+    scrubber.value = radarFrameIdx;
+    showRadarFrame(radarFrameIdx);
+  } catch(e) { console.warn('Radar load failed', e); }
+}
+
+function showRadarFrame(idx) {
+  if (!radarFrames.length) return;
+  radarFrameIdx = idx;
+  const frame = radarFrames[idx];
+  if (radarLayer) radarMap.removeLayer(radarLayer);
+  radarLayer = L.tileLayer(`${radarHost}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`, {
+    opacity: 0.6, maxZoom: 18, tileSize: 256
+  }).addTo(radarMap);
+
+  const ts = new Date(frame.time * 1000);
+  const now = Date.now();
+  const diffMin = Math.round((now - frame.time * 1000) / 60000);
+  const timeStr = ts.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const agoStr = diffMin <= 0 ? 'forecast' : diffMin === 1 ? '1m ago' : `${diffMin}m ago`;
+  document.getElementById('radarTimeLabel').textContent = `${timeStr} (${agoStr})`;
+  document.getElementById('radarScrubber').value = idx;
+}
+
+function onRadarScrub(val) {
+  stopRadarPlay();
+  showRadarFrame(parseInt(val));
+}
+
+function toggleRadarPlay() {
+  if (radarPlaying) { stopRadarPlay(); return; }
+  radarPlaying = true;
+  const icon = document.getElementById('radarPlayIcon');
+  icon.innerHTML = '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>';
+  radarTimer = setInterval(() => {
+    const next = (radarFrameIdx + 1) % radarFrames.length;
+    showRadarFrame(next);
+    if (next === radarFrames.length - 1) stopRadarPlay();
+  }, 500);
+}
+
+function stopRadarPlay() {
+  radarPlaying = false;
+  clearInterval(radarTimer);
+  const icon = document.getElementById('radarPlayIcon');
+  icon.innerHTML = '<polygon points="5,3 19,12 5,21"/>';
+}
+
+function renderPrecipOutlook() {
+  const h = lastHourlyData;
+  const el = document.getElementById('precipOutlook');
+  if (!h || !el) return;
+  const now = new Date();
+  const cols = [];
+  let found = 0;
+  for (let j = 0; j < h.time.length && found < 8; j++) {
+    const t = new Date(h.time[j]);
+    if (t <= now) continue;
+    const prob = h.precipitation_probability[j] ?? 0;
+    const label = t.toLocaleTimeString([], { hour: 'numeric' });
+    const fillH = Math.max(2, prob * 0.4);
+    cols.push(`<div class="precip-bar-col">
+      <div class="precip-bar-pct">${prob}%</div>
+      <div class="precip-bar-track"><div class="precip-bar-fill" style="height:${fillH}px"></div></div>
+      <div class="precip-bar-time">${label}</div>
+    </div>`);
+    found++;
+  }
+  el.innerHTML = cols.join('');
+}
 </script>
 </body>
 </html>
