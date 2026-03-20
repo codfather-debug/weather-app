@@ -1631,8 +1631,8 @@ function wetnessMultiplier(w) {
 
 function computeTennisWeatherScore(T, W, G, R) {
   const temp_score = Math.exp(-Math.pow(T - 72, 2) / (2 * Math.pow(15, 2)));
-  const wind_score = 1 / (1 + Math.exp((W - 10) / 3));
-  const gust_score = 1 / (1 + Math.exp((G - W - 6) / 2));
+  const wind_score = 1 / (1 + Math.exp((W - 15) / 3));   // inflection at 15mph (was 10)
+  const gust_score = 1 / (1 + Math.exp((G - W - 12) / 3)); // excess inflection at 12mph above avg (was 6)
   // Above 50°F temperature gets higher weight; below 50 wind/gust dominate more
   const [tw, ww, gw] = T > 50 ? [0.45, 0.30, 0.20] : [0.25, 0.35, 0.25];
   const base = (tw * temp_score + ww * wind_score + gw * gust_score) / (tw + ww + gw);
@@ -1649,8 +1649,8 @@ function computeTennisWeatherScore(T, W, G, R) {
 function twsComponents(T, W, G, R) {
   return {
     temp: Math.round(Math.exp(-Math.pow(T - 72, 2) / (2 * Math.pow(15, 2))) * 100),
-    wind: Math.round((1 / (1 + Math.exp((W - 10) / 3))) * 100),
-    gust: Math.round((1 / (1 + Math.exp((G - W - 6) / 2))) * 100),
+    wind: Math.round((1 / (1 + Math.exp((W - 15) / 3))) * 100),
+    gust: Math.round((1 / (1 + Math.exp((G - W - 12) / 3))) * 100),
     rain: Math.round(rainMultiplier(R) * 100),
   };
 }
