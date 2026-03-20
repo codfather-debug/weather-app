@@ -1633,8 +1633,9 @@ function computeTennisWeatherScore(T, W, G, R) {
   const temp_score = Math.exp(-Math.pow(T - 72, 2) / (2 * Math.pow(15, 2)));
   const wind_score = 1 / (1 + Math.exp((W - 10) / 3));
   const gust_score = 1 / (1 + Math.exp((G - W - 6) / 2));
-  // Base normalized to 0–1 (original weights 0.25/0.35/0.25 sum to 0.85)
-  const base = (0.25 * temp_score + 0.35 * wind_score + 0.25 * gust_score) / 0.85;
+  // Above 50°F temperature gets higher weight; below 50 wind/gust dominate more
+  const [tw, ww, gw] = T > 50 ? [0.45, 0.30, 0.20] : [0.25, 0.35, 0.25];
+  const base = (tw * temp_score + ww * wind_score + gw * gust_score) / (tw + ww + gw);
   const score = Math.min(100, Math.max(0, Math.round(base * rainMultiplier(R) * 100)));
   let category;
   if (score >= 90) category = 'Elite tennis conditions';
