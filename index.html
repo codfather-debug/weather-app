@@ -324,6 +324,15 @@
   .session-card.best-session {
     background: rgba(79,195,247,0.08); border-color: rgba(79,195,247,0.35);
   }
+  .session-card.session-selected {
+    background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.22);
+  }
+  .session-hours-inline {
+    display: none; margin-top: 8px;
+    background: rgba(255,255,255,0.02); border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden;
+  }
+  .session-hours-inline.open { display: block; }
   .wet-warning {
     font-size: 10px; color: #ffab40; padding: 2px 0 4px; font-style: italic;
   }
@@ -436,26 +445,6 @@
   </div>
 </div>
 
-<!-- Session detail modal -->
-<div class="modal-backdrop" id="sessionModalBackdrop" onclick="closeSessionModal(event)">
-  <div class="modal">
-    <div class="modal-title" id="sessionModalTitle">—</div>
-    <div class="forecast-table" style="margin: 0 -4px;">
-      <div class="forecast-cols" id="sessionModalCols">
-        <div class="fc-hdr">Time</div>
-        <div class="fc-hdr"></div>
-        <div class="fc-hdr">Temp</div>
-        <div class="fc-hdr">Wind</div>
-        <div class="fc-hdr">Rain</div>
-        <div class="fc-hdr">Courts</div>
-        <div class="fc-hdr">🎾</div>
-        <div class="fc-hdr">UV</div>
-      </div>
-      <div id="sessionModalRows"></div>
-    </div>
-    <button class="modal-cancel" onclick="document.getElementById('sessionModalBackdrop').classList.remove('open')">Close</button>
-  </div>
-</div>
 
 <div class="page">
 
@@ -1522,7 +1511,7 @@ function toggleDayExpand(idx, dayStr) {
     const bestLabel = isBest ? `<div class="session-best-label">★ BEST</div>` : '';
     const cardClass = `session-card${isPast?' past':''}${isBest?' best-session':''}`;
 
-    return `<div class="${cardClass}" onclick="openSessionDetail('${dayStr}',${wi})" style="cursor:pointer">
+    return `<div class="${cardClass}" onclick="event.stopPropagation();openSessionDetail('${dayStr}',${wi},${idx})" style="cursor:pointer">
       <div class="session-label">${win.label}</div>
       <div class="session-icon">${icon}</div>
       <div class="session-temp">${avgTemp}°</div>
@@ -1534,28 +1523,33 @@ function toggleDayExpand(idx, dayStr) {
     </div>`;
   });
 
-  expand.innerHTML = `<div class="session-cards-row">${sessionCards.join('')}</div>`;
+  expand.innerHTML = `<div class="session-cards-row">${sessionCards.join('')}</div><div class="session-hours-inline" id="session-hours-${idx}" onclick="event.stopPropagation()"></div>`;
   expand.classList.add('open');
   wrap.classList.add('expanded');
 }
 
 // ═══════════════════════════════════════
-// SESSION DETAIL MODAL
+// SESSION DETAIL INLINE
 // ═══════════════════════════════════════
-function openSessionDetail(dayStr, winIdx) {
+function openSessionDetail(dayStr, winIdx, dayIdx) {
+  const hoursDiv = document.getElementById(`session-hours-${dayIdx}`);
+  if (!hoursDiv) return;
+
+  const cards = document.querySelectorAll(`#day-expand-${dayIdx} .session-card`);
+
+  // Toggle closed if same session clicked again
+  if (hoursDiv.dataset.openWin === String(winIdx) && hoursDiv.classList.contains('open')) {
+    hoursDiv.classList.remove('open');
+    hoursDiv.dataset.openWin = '';
+    cards.forEach(c => c.classList.remove('session-selected'));
+    return;
+  }
+
   const win = SESSION_WINDOWS[winIdx];
   const h = lastHourlyData;
   if (!h) return;
 
-  const dt = new Date(dayStr + 'T12:00:00');
-  const today = new Date(); today.setHours(0,0,0,0);
-  const isToday = dt.setHours(0,0,0,0) === today.getTime();
-  const dayLabel = isToday ? 'Today' : new Date(dayStr + 'T12:00:00').toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
-  document.getElementById('sessionModalTitle').textContent = `${dayLabel} · ${win.label}`;
-
-  // Apply hourly grid to header
-  const cols = document.getElementById('sessionModalCols');
-  cols.style.gridTemplateColumns = '65px 26px 52px 42px 32px 46px 34px 26px';
+  cards.forEach((c, i) => c.classList.toggle('session-selected', i === winIdx));
 
   const rows = [];
   for (let j = 0; j < h.time.length; j++) {
@@ -1591,13 +1585,9 @@ function openSessionDetail(dayStr, winIdx) {
     </div>`);
   }
 
-  document.getElementById('sessionModalRows').innerHTML = rows.join('') || '<div class="forecast-loading">No data available</div>';
-  document.getElementById('sessionModalBackdrop').classList.add('open');
-}
-
-function closeSessionModal(e) {
-  if (e && e.target.id !== 'sessionModalBackdrop') return;
-  document.getElementById('sessionModalBackdrop').classList.remove('open');
+  hoursDiv.innerHTML = rows.join('') || '<div class="forecast-loading">No data</div>';
+  hoursDiv.dataset.openWin = String(winIdx);
+  hoursDiv.classList.add('open');
 }
 
 // ═══════════════════════════════════════
