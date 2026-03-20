@@ -157,7 +157,6 @@
   .tennis-verdict { font-size: 11px; font-weight: 500; margin-top: 1px; transition: color 0.6s ease; }
   .tennis-bar-track { height: 5px; background: rgba(255,255,255,0.07); border-radius: 3px; overflow: hidden; margin-bottom: 12px; }
   .tennis-bar-fill { height: 100%; border-radius: 3px; transition: width 1.2s cubic-bezier(0.4,0,0.2,1), background 0.6s ease; }
-  .tennis-grade-scale { font-size: 12px; color: var(--muted); text-align: center; margin-top: 6px; font-style: italic; }
 
   /* ── Forecast section ── */
   .forecast-section { margin-bottom: 12px; opacity: 0; animation: fadeUp 0.5s ease 0.65s forwards; }
@@ -450,7 +449,6 @@
         </div>
       </div>
       <div class="tennis-bar-track"><div class="tennis-bar-fill" id="tennisBar" style="width:0%"></div></div>
-      <div class="tennis-grade-scale" id="tennisGradeScale">— vs Perfect conditions</div>
     </div>
 
     <!-- Forecast tabs -->
@@ -991,13 +989,28 @@ function renderHourly(h) {
   }
   currentHourWetness = hourlyWetness[startIdx] ?? 0;
   renderUV(h.uv_index?.[startIdx]);
-  // Update tennis card with current hour's forecast data rather than old current weather API data
+  // Update main stats and tennis card with current hour's forecast data
   if (startIdx < h.time.length) {
     const temp = Math.round(h.temperature_2m[startIdx]);
     const feel = h.apparent_temperature?.[startIdx] != null ? Math.round(h.apparent_temperature[startIdx]) : null;
     const windSpeedMph = Math.round(h.wind_speed_10m[startIdx]);
     const windGustMph = Math.round(h.wind_gusts_10m[startIdx] ?? windSpeedMph * 1.4);
-    const rainProb = (h.precipitation_probability[startIdx] ?? 0) / 100;
+    const precip = h.precipitation?.[startIdx] ?? 0;
+    const precipProb = h.precipitation_probability[startIdx] ?? 0;
+    const code = h.weather_code[startIdx];
+    const [condLabel, icon] = WMO[code] || ['', '🌡'];
+    // Update main stats
+    document.getElementById('tempVal').textContent = temp;
+    document.getElementById('conditionText').textContent = condLabel;
+    document.getElementById('weatherIcon').textContent = icon;
+    document.getElementById('feelVal').innerHTML = `${feel}<span class="stat-unit">°F</span>`;
+    document.getElementById('feelDesc').textContent = feltDesc(temp, feel);
+    document.getElementById('windVal').innerHTML = `${windSpeedMph}<span class="stat-unit">mph</span>`;
+    document.getElementById('rainVal').innerHTML = `${precip.toFixed(2)}<span class="stat-unit">in</span>`;
+    document.getElementById('rainDesc').textContent = precip === 0 ? 'Dry' : precip < 0.1 ? 'Light' : precip < 0.5 ? 'Moderate' : 'Heavy';
+    document.getElementById('rainBar').style.width = Math.min(precip * 100, 100) + '%';
+    // Update tennis card
+    const rainProb = precipProb / 100;
     renderTennis({temp, feel, windSpeedMph, windGustMph, rainProb});
   } else if (lastTennisRenderParams) {
     renderTennis(lastTennisRenderParams);
@@ -1309,23 +1322,12 @@ function renderSessions(h) {
 // RENDER CURRENT
 // ═══════════════════════════════════════
 function renderWeather({temp,feel,windSpeedMph,windGustMph,windDeg,rain,rainProb,condLabel,icon}) {
-  const rainIn=rain??0;
-  document.getElementById('tempVal').textContent=Math.round(temp);
-  document.getElementById('conditionText').textContent=condLabel;
-  document.getElementById('weatherIcon').textContent=icon;
-  document.getElementById('feelVal').innerHTML=`${Math.round(feel)}<span class="stat-unit">°F</span>`;
-  document.getElementById('feelDesc').textContent=feltDesc(temp,feel);
-  document.getElementById('windVal').innerHTML=`${Math.round(windSpeedMph)}<span class="stat-unit">mph</span>`;
-  document.getElementById('windDesc').textContent=windDeg!=null?`From ${windDirection(windDeg)}`:'—';
-  document.getElementById('rainVal').innerHTML=`${rainIn.toFixed(2)}<span class="stat-unit">in</span>`;
-  document.getElementById('rainDesc').textContent=rainIn===0?'Dry':rainIn<0.1?'Light':rainIn<0.5?'Moderate':'Heavy';
-  document.getElementById('rainBar').style.width=Math.min(rainIn*100,100)+'%';
+  // Only update the timestamp - let renderHourly handle all main stats to avoid race condition with forecast
   const now=new Date();
   document.getElementById('updatedTime').textContent=`Updated ${now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}`;
   document.getElementById('timeLine').textContent=now.toLocaleDateString([],{weekday:'long',month:'long',day:'numeric'});
   // Feature 4: store conditions summary
   currentConditionsSummary = { temp, windSpeedMph, rainProb };
-  // Don't render tennis here - let renderHourly handle it with forecast data to avoid race condition
 }
 function setSource(name,sid) {
   document.getElementById('sourceBadge').className='source-badge '+(name==='NWS'?'nws':'openmeteo');
@@ -1419,9 +1421,6 @@ function renderTennis({temp, feel, windSpeedMph, windGustMph, rainProb}) {
   document.getElementById('tennisVerdict').style.color = color;
   const bar = document.getElementById('tennisBar');
   bar.style.width = score + '%'; bar.style.background = color; bar.style.boxShadow = `0 0 8px ${color}55`;
-  // Update grading scale
-  document.getElementById('tennisGradeScale').textContent = `${score}% vs Perfect conditions`;
-  document.getElementById('tennisGradeScale').style.color = color;
 }
 
 // ═══════════════════════════════════════
