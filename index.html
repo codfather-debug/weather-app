@@ -1014,7 +1014,17 @@ function renderHourly(h) {
   }
   currentHourWetness = hourlyWetness[startIdx] ?? 0;
   renderUV(h.uv_index?.[startIdx]);
-  if (lastTennisRenderParams) renderTennis(lastTennisRenderParams);
+  // Update tennis card with current hour's forecast data rather than old current weather API data
+  if (startIdx < h.time.length) {
+    const temp = Math.round(h.temperature_2m[startIdx]);
+    const feel = h.apparent_temperature?.[startIdx] != null ? Math.round(h.apparent_temperature[startIdx]) : null;
+    const windSpeedMph = Math.round(h.wind_speed_10m[startIdx]);
+    const windGustMph = Math.round(h.wind_gusts_10m[startIdx] ?? windSpeedMph * 1.4);
+    const rainProb = (h.precipitation_probability[startIdx] ?? 0) / 100;
+    renderTennis({temp, feel, windSpeedMph, windGustMph, rainProb});
+  } else if (lastTennisRenderParams) {
+    renderTennis(lastTennisRenderParams);
+  }
 
   // Feature 1: render best window card after hourlyWetness is set
   renderBestWindowCard(h);
