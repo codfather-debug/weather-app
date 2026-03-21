@@ -1149,7 +1149,7 @@ function renderHourly(h) {
       <div><div class="fc-time">${isNow?'Now':dt.toLocaleTimeString([],{hour:'numeric',hour12:true})}</div><div class="fc-time-sub">${isNow?'':dt.toLocaleDateString([],{weekday:'short'})}</div></div>
       <div class="fc-icon">${icon}</div>
       <div><div class="fc-temp">${temp}°</div>${feels!=null&&feels!==temp?`<div class="fc-feels">FEELS ${feels}°</div>`:''}</div>
-      <div class="fc-wind">${wind}<span style="font-size:9px;opacity:0.7"> mph</span></div>
+      <div class="fc-wind">${wind}<span style="font-size:9px;opacity:0.7"> mph</span>${gust>wind+8?`<div style="font-size:8px;color:var(--muted);margin-top:1px">↑${gust}g</div>`:''}</div>
       <div class="fc-precip">${precip}<span style="font-size:9px;opacity:0.7">%</span></div>
       <div class="fc-courts"><div class="court-badge ${courtClass}">${courtLabel}</div></div>
       <div class="fc-tennis"><div class="tennis-dot" style="background:${tennisDotColor(ts)}">${ts}</div>${tlf?`<div class="tennis-limit">${tlf}</div>`:''}</div>
@@ -1692,7 +1692,7 @@ function tennisLimitingFactor(temp, wind, gust, precipProb, wetness, feels) {
   if (precipProb >= 30) return 'RAIN';
   if (T < 45) return 'COLD';
   if (wind > 20) return 'WINDY';
-  if ((gust - wind) > 15) return 'GUSTY';
+  if ((gust - wind) > 8) return 'GUSTY';
   if (T < 55) return 'COOL';
   return '';
 }
