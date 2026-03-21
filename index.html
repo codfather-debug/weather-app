@@ -1149,7 +1149,7 @@ function renderHourly(h) {
       <div><div class="fc-time">${isNow?'Now':dt.toLocaleTimeString([],{hour:'numeric',hour12:true})}</div><div class="fc-time-sub">${isNow?'':dt.toLocaleDateString([],{weekday:'short'})}</div></div>
       <div class="fc-icon">${icon}</div>
       <div><div class="fc-temp">${temp}°</div>${feels!=null&&feels!==temp?`<div class="fc-feels">FEELS ${feels}°</div>`:''}</div>
-      <div class="fc-wind">${wind}<span style="font-size:9px;opacity:0.7"> mph</span>${gust>wind+8?`<div style="font-size:8px;color:var(--muted);margin-top:1px">↑${gust}g</div>`:''}</div>
+      <div class="fc-wind">${wind}${gust>wind+5?`<span style="font-size:9px;opacity:0.5"> / ${gust}</span>`:''}<span style="font-size:9px;opacity:0.7"> mph</span></div>
       <div class="fc-precip">${precip}<span style="font-size:9px;opacity:0.7">%</span></div>
       <div class="fc-courts"><div class="court-badge ${courtClass}">${courtLabel}</div></div>
       <div class="fc-tennis"><div class="tennis-dot" style="background:${tennisDotColor(ts)}">${ts}</div>${tlf?`<div class="tennis-limit">${tlf}</div>`:''}</div>
