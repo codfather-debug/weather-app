@@ -1636,11 +1636,12 @@ function wetnessMultiplier(w) {
 }
 
 function computeTennisWeatherScore(T, W, G, R, actualTemp = null) {
-  const temp_score = Math.exp(-Math.pow(T - 72, 2) / (2 * Math.pow(15, 2)));
+  const temp_score = Math.exp(-Math.pow(T - 72, 2) / (2 * Math.pow(12, 2))); // σ=12: tighter curve, cold penalized more
   const wind_score = 1 / (1 + Math.exp((W - 15) / 3));
   const gust_score = 1 / (1 + Math.exp((G - W - 12) / 3));
-  // Use actual temp (if provided) for weight decision so a 65°F day with low feels-like still gets temp-biased weights
-  const [tw, ww, gw] = (actualTemp ?? T) > 50 ? [0.45, 0.30, 0.20] : [0.25, 0.35, 0.25];
+  // Cold days: temp is the limiting factor so it gets the most weight
+  // Warm days: temp is good, so wind/gust matter more relatively
+  const [tw, ww, gw] = (actualTemp ?? T) > 50 ? [0.45, 0.30, 0.20] : [0.55, 0.28, 0.17];
   const base = (tw * temp_score + ww * wind_score + gw * gust_score) / (tw + ww + gw);
   const score = Math.min(100, Math.max(0, Math.round(base * rainMultiplier(R) * 100)));
   let category;
@@ -1654,7 +1655,7 @@ function computeTennisWeatherScore(T, W, G, R, actualTemp = null) {
 }
 function twsComponents(T, W, G, R) {
   return {
-    temp: Math.round(Math.exp(-Math.pow(T - 72, 2) / (2 * Math.pow(15, 2))) * 100),
+    temp: Math.round(Math.exp(-Math.pow(T - 72, 2) / (2 * Math.pow(12, 2))) * 100),
     wind: Math.round((1 / (1 + Math.exp((W - 15) / 3))) * 100),
     gust: Math.round((1 / (1 + Math.exp((G - W - 12) / 3))) * 100),
     rain: Math.round(rainMultiplier(R) * 100),
