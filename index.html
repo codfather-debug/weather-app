@@ -1647,8 +1647,8 @@ function computeTennisWeatherScore(T, W, G, R, actualTemp = null) {
   let category;
   if (score >= 90) category = 'Elite tennis conditions';
   else if (score >= 80) category = 'Excellent';
-  else if (score >= 70) category = 'Good';
-  else if (score >= 60) category = 'Playable';
+  else if (score >= 66) category = 'Good';
+  else if (score >= 56) category = 'Playable';
   else if (score >= 40) category = 'Poor';
   else category = 'Bad';
   return { score, category };
@@ -1670,20 +1670,20 @@ function tennisMini(temp, wind, precipProb, gust, wetness = 0, feels = null) {
   const { score } = computeTennisWeatherScore(T, wind, G, R, temp);
   let s = Math.max(0, Math.round(score * wetnessMultiplier(wetness)));
   // Temp > 60 with feels > 52 and low rain/dry courts → floor at Playable
-  if (temp > 60 && T > 52 && precipProb < 10 && wetness <= 0.01) s = Math.max(s, 60);
+  if (temp > 60 && T > 52 && precipProb < 10 && wetness <= 0.01) s = Math.max(s, 56);
   return s;
 }
 
 function tennisDotColor(s) {
   if(s>=90)return '#69f0ae'; if(s>=80)return '#b2ff59';
-  if(s>=70)return '#eeff41'; if(s>=60)return '#ffab40';
+  if(s>=66)return '#eeff41'; if(s>=56)return '#ffab40';
   if(s>=40)return '#ff7043'; return '#ef5350';
 }
 function tennisVerdict(s) {
   if(s>=90)return{text:'Elite — get out there',color:'#69f0ae'};
   if(s>=80)return{text:'Excellent conditions',color:'#b2ff59'};
-  if(s>=70)return{text:'Good to play',color:'#eeff41'};
-  if(s>=60)return{text:'Playable',color:'#ffab40'};
+  if(s>=66)return{text:'Good to play',color:'#eeff41'};
+  if(s>=56)return{text:'Playable',color:'#ffab40'};
   if(s>=40)return{text:'Poor conditions',color:'#ff7043'};
   return{text:'Bad conditions',color:'#ef5350'};
 }
@@ -1705,7 +1705,7 @@ function renderTennis({temp, feel, windSpeedMph, windGustMph, rainProb}) {
   const R = rainProb ?? 0;
   const {score: rawScore} = computeTennisWeatherScore(T, windSpeedMph, G, R, temp);
   let score = Math.max(0, Math.round(rawScore * wetnessMultiplier(currentHourWetness)));
-  if (temp > 60 && T > 52 && R < 0.10 && currentHourWetness <= 0.01) score = Math.max(score, 60);
+  if (temp > 60 && T > 52 && R < 0.10 && currentHourWetness <= 0.01) score = Math.max(score, 56);
   const {text, color} = tennisVerdict(score);
   // Feature 4: store current tennis score
   currentTennisScore = score;
